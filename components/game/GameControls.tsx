@@ -22,6 +22,8 @@ interface GameControlsProps {
   pendingMeldPoints?: number;
   hasPendingCleanSequence?: boolean;
   initialMeldThreshold?: number;
+  mustDiscardExcess?: boolean;
+  excessCards?: number;
 }
 
 export function GameControls({
@@ -41,6 +43,8 @@ export function GameControls({
   pendingMeldPoints = 0,
   hasPendingCleanSequence = false,
   initialMeldThreshold = 30,
+  mustDiscardExcess = false,
+  excessCards = 0,
 }: GameControlsProps) {
   if (!isMyTurn) {
     return (
@@ -114,9 +118,17 @@ export function GameControls({
         </div>
       )}
 
+      {/* Excess cards warning */}
+      {mustDiscardExcess && (
+        <div className="flex items-center gap-2 bg-orange-500/20 text-orange-300 text-xs sm:text-sm rounded-lg px-3 py-2 border border-orange-500/30">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>You have {excessCards} extra card{excessCards > 1 ? 's' : ''}! Discard down to 13 before drawing.</span>
+        </div>
+      )}
+
       {/* Action buttons */}
       <div className="flex gap-2">
-        {turnPhase === "draw" && (
+        {turnPhase === "draw" && !mustDiscardExcess && (
           <>
             <Button
               onClick={onDrawFromStock}
@@ -136,6 +148,20 @@ export function GameControls({
               Take Discard
             </Button>
           </>
+        )}
+
+        {/* Force discard excess cards */}
+        {turnPhase === "draw" && mustDiscardExcess && (
+          <Button
+            onClick={onDiscard}
+            disabled={selectedCount !== 1 || isLoading}
+            className="flex-1 h-11 bg-orange-600 hover:bg-orange-700 text-white font-medium disabled:opacity-40"
+          >
+            Discard Extra Card
+            {selectedCount === 1 && (
+              <Badge className="ml-2 bg-white/20 text-white text-[10px] px-1.5">1</Badge>
+            )}
+          </Button>
         )}
 
         {turnPhase === "play" && (
@@ -194,7 +220,8 @@ export function GameControls({
 
       {/* Help text */}
       <p className="text-white/30 text-[10px] sm:text-xs text-center hidden sm:block">
-        {turnPhase === "draw" && "Draw a card from the stock pile or take the top discard"}
+        {turnPhase === "draw" && !mustDiscardExcess && "Draw a card from the stock pile or take the top discard"}
+        {turnPhase === "draw" && mustDiscardExcess && "Select 1 card to discard"}
         {turnPhase === "play" && (
           <>
             {!hasLaidInitialMeld

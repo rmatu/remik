@@ -35,6 +35,7 @@ const meldValidator = v.object({
   cards: v.array(cardValidator),
   ownerId: v.optional(v.string()),
   isPending: v.optional(v.boolean()),
+  createdInTurn: v.optional(v.number()), // Turn number when meld was created
 });
 
 export default defineSchema({
@@ -91,6 +92,7 @@ export default defineSchema({
     ),
 
     currentRound: v.number(),
+    currentTurnNumber: v.optional(v.number()), // Increments each turn within a round
     createdAt: v.number(),
     lastActionAt: v.number(),
   }).index("by_code", ["code"]),

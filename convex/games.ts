@@ -233,6 +233,7 @@ export const startGame = mutation({
       discardPile: [firstDiscard],
       tableMelds: [],
       currentRound: 1,
+      currentTurnNumber: 1,
       dealerPlayerId,
       currentTurnPlayerId: firstPlayerId,
       turnPhase: "draw", // Normal turn: draw first, then can play melds
@@ -293,6 +294,12 @@ export const getGameState = query({
       hasPendingCleanSequence: hasPendingCleanSequence(game.tableMelds, p.playerId.toString()),
     }));
 
+    // Check if current player needs to discard excess cards
+    const currentPlayer = game.players.find((p) => p.playerId === args.playerId);
+    const excessCards = currentPlayer ? Math.max(0, currentPlayer.hand.length - CARDS_PER_PLAYER) : 0;
+    const isMyTurn = game.currentTurnPlayerId === args.playerId;
+    const mustDiscardExcess = isMyTurn && game.turnPhase === "draw" && excessCards > 0;
+
     return {
       _id: game._id,
       code: game.code,
@@ -313,6 +320,8 @@ export const getGameState = query({
       discardPileCount: game.discardPile.length,
       tableMelds: game.tableMelds,
       currentRound: game.currentRound,
+      mustDiscardExcess,
+      excessCards,
     };
   },
 });
@@ -381,6 +390,7 @@ export const startNextRound = mutation({
       discardPile: [firstDiscard],
       tableMelds: [],
       currentRound: game.currentRound + 1,
+      currentTurnNumber: 1,
       dealerPlayerId: newDealerPlayerId,
       currentTurnPlayerId: firstPlayerId,
       turnPhase: "draw",

@@ -39,6 +39,11 @@ const cardValidator = v.object({
   isJoker: v.boolean(),
 });
 
+// Maximum reasonable hand size - prevents bugs from causing runaway card accumulation
+const MAX_HAND_SIZE = 20;
+// Normal hand size before drawing
+const NORMAL_HAND_SIZE = 13;
+
 export const drawFromStock = mutation({
   args: {
     gameId: v.id("games"),
@@ -54,6 +59,14 @@ export const drawFromStock = mutation({
 
     if (game.currentTurnPlayerId !== args.playerId) {
       throw new Error("It's not your turn");
+    }
+
+    const playerIndex = game.players.findIndex((p) => p.playerId === args.playerId);
+    const player = game.players[playerIndex];
+
+    // Safety check: if player has too many cards, they must discard first
+    if (player.hand.length > NORMAL_HAND_SIZE) {
+      throw new Error(`You have ${player.hand.length} cards. Discard down to ${NORMAL_HAND_SIZE} before drawing.`);
     }
 
     if (game.turnPhase !== "draw") {
@@ -145,6 +158,14 @@ export const drawFromDiscard = mutation({
       throw new Error("It's not your turn");
     }
 
+    const playerIndex = game.players.findIndex((p) => p.playerId === args.playerId);
+    const playerForCheck = game.players[playerIndex];
+
+    // Safety check: if player has too many cards, they must discard first
+    if (playerForCheck.hand.length > NORMAL_HAND_SIZE) {
+      throw new Error(`You have ${playerForCheck.hand.length} cards. Discard down to ${NORMAL_HAND_SIZE} before drawing.`);
+    }
+
     if (game.turnPhase !== "draw") {
       throw new Error("You can only draw at the start of your turn");
     }
@@ -156,8 +177,7 @@ export const drawFromDiscard = mutation({
     const newDiscard = [...game.discardPile];
     const drawnCard = newDiscard.pop()!;
 
-    const playerIndex = game.players.findIndex((p) => p.playerId === args.playerId);
-    const player = game.players[playerIndex];
+    const player = playerForCheck;
     const newHand = [...player.hand, drawnCard];
     const updatedPlayers = [...game.players];
     updatedPlayers[playerIndex] = {
@@ -200,12 +220,17 @@ export const discardCard = mutation({
       throw new Error("It's not your turn");
     }
 
-    if (game.turnPhase !== "play" && game.turnPhase !== "discard") {
+    const playerIndex = game.players.findIndex((p) => p.playerId === args.playerId);
+    const player = game.players[playerIndex];
+
+    // Special case: allow discarding during draw phase if player has excess cards
+    const hasExcessCards = player.hand.length > NORMAL_HAND_SIZE;
+    const isDrawPhase = game.turnPhase === "draw";
+
+    if (!hasExcessCards && game.turnPhase !== "play" && game.turnPhase !== "discard") {
       throw new Error("You must draw before discarding");
     }
 
-    const playerIndex = game.players.findIndex((p) => p.playerId === args.playerId);
-    const player = game.players[playerIndex];
     const cardIndex = player.hand.findIndex((c) => c.id === args.cardId);
 
     if (cardIndex === -1) {
@@ -246,7 +271,18 @@ export const discardCard = mutation({
       return;
     }
 
-    // Move to next player
+    // If discarding excess cards during draw phase, stay in draw phase
+    if (isDrawPhase && hasExcessCards) {
+      await ctx.db.patch(args.gameId, {
+        discardPile: [...game.discardPile, discardedCard],
+        players: updatedPlayers,
+        // Stay in draw phase - don't pass turn
+        lastActionAt: Date.now(),
+      });
+      return;
+    }
+
+    // Normal discard: Move to next player
     const nextPlayerIndex = (playerIndex + 1) % game.players.length;
     const nextPlayerId = game.players[nextPlayerIndex].playerId;
 
@@ -254,6 +290,7 @@ export const discardCard = mutation({
       discardPile: [...game.discardPile, discardedCard],
       players: updatedPlayers,
       currentTurnPlayerId: nextPlayerId,
+      currentTurnNumber: (game.currentTurnNumber ?? 0) + 1,
       turnPhase: "draw",
       lastActionAt: Date.now(),
     });
@@ -314,6 +351,7 @@ export const layDownMeld = mutation({
       cards: finalMeldCards,
       ownerId: player.hasLaidInitialMeld ? undefined : args.playerId.toString(),
       isPending: player.hasLaidInitialMeld ? undefined : true,
+      createdInTurn: game.currentTurnNumber ?? 0,
     };
 
     let updatedMelds = [...game.tableMelds, newMeld];
@@ -393,12 +431,14 @@ export const layDownInitialMelds = mutation({
     }
 
     // Validate each meld individually and create them as pending
+    const currentTurn = game.currentTurnNumber ?? 0;
     const newMelds: Array<{
       id: string;
       type: "sequence" | "group";
       cards: Card[];
       ownerId: string;
       isPending: boolean;
+      createdInTurn: number;
     }> = [];
     for (const meldCards of allMeldCards) {
       const result = validateMeld(meldCards);
@@ -413,6 +453,7 @@ export const layDownInitialMelds = mutation({
         cards: finalMeldCards,
         ownerId: args.playerId.toString(),
         isPending: true,
+        createdInTurn: currentTurn,
       });
     }
 
@@ -660,22 +701,33 @@ export const replaceJoker = mutation({
       throw new Error(result.error || "Cannot replace joker with this card");
     }
 
-    // Get the joker
-    const joker = meld.cards[jokerIndex];
+    let newMeldCards: typeof meld.cards;
+    let newHand: typeof player.hand;
 
-    // Update meld with replacement
-    const newMeldCards = [...meld.cards];
-    newMeldCards[jokerIndex] = replacementCard;
+    if (result.extendInstead && result.insertIndex !== undefined) {
+      // Extension mode: insert card adjacent to joker, don't remove joker
+      newMeldCards = [
+        ...meld.cards.slice(0, result.insertIndex),
+        replacementCard,
+        ...meld.cards.slice(result.insertIndex),
+      ];
+      // Just remove replacement card from hand, joker stays in meld
+      newHand = player.hand.filter((c) => c.id !== args.replacementCardId);
+    } else {
+      // Standard replacement: swap joker with card
+      const joker = meld.cards[jokerIndex];
+      newMeldCards = [...meld.cards];
+      newMeldCards[jokerIndex] = replacementCard;
+      // Remove replacement card, add joker to hand
+      newHand = player.hand.filter((c) => c.id !== args.replacementCardId);
+      newHand.push(joker);
+    }
 
     const updatedMelds = [...game.tableMelds];
     updatedMelds[meldIndex] = {
       ...meld,
       cards: newMeldCards,
     };
-
-    // Update player's hand: remove replacement card, add joker
-    const newHand = player.hand.filter((c) => c.id !== args.replacementCardId);
-    newHand.push(joker);
 
     const updatedPlayers = [...game.players];
     updatedPlayers[playerIndex] = {
@@ -732,6 +784,12 @@ export const takeBackPendingMeld = mutation({
     // Can only take back your own melds
     if (meld.ownerId !== args.playerId.toString()) {
       throw new Error("Cannot take back another player's meld");
+    }
+
+    // Can only take back melds created in the current turn
+    const currentTurn = game.currentTurnNumber ?? 0;
+    if (meld.createdInTurn !== undefined && meld.createdInTurn !== currentTurn) {
+      throw new Error("Can only take back melds created in the current turn");
     }
 
     // Return cards to hand

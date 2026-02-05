@@ -379,7 +379,11 @@ export function canAddToMeld(meld: Meld, card: Card): ValidationResult {
   }
 }
 
-export function canReplaceJoker(meld: Meld, jokerIndex: number, card: Card): ValidationResult {
+export function canReplaceJoker(
+  meld: Meld,
+  jokerIndex: number,
+  card: Card
+): ValidationResult & { extendInstead?: boolean; insertIndex?: number } {
   const joker = meld.cards[jokerIndex];
   if (!joker.isJoker) {
     return { valid: false, error: "Selected card is not a joker" };
@@ -394,7 +398,39 @@ export function canReplaceJoker(meld: Meld, jokerIndex: number, card: Card): Val
   newCards[jokerIndex] = card;
 
   if (meld.type === "sequence") {
-    return validateSequence(newCards);
+    const replaceResult = validateSequence(newCards);
+    if (replaceResult.valid) {
+      return replaceResult;
+    }
+
+    // Direct replacement failed - check if we can extend the sequence instead
+    // by inserting the card adjacent to the joker
+    // This allows adding 8 next to a joker representing 7 in [4,5,6,Joker]
+    const cardRankIdx = getRankIndex(card.rank as Rank);
+
+    // Try inserting after the joker
+    const cardsWithInsertAfter = [
+      ...meld.cards.slice(0, jokerIndex + 1),
+      card,
+      ...meld.cards.slice(jokerIndex + 1),
+    ];
+    const insertAfterResult = validateSequenceOrder(cardsWithInsertAfter);
+    if (insertAfterResult.valid) {
+      return { valid: true, extendInstead: true, insertIndex: jokerIndex + 1 };
+    }
+
+    // Try inserting before the joker
+    const cardsWithInsertBefore = [
+      ...meld.cards.slice(0, jokerIndex),
+      card,
+      ...meld.cards.slice(jokerIndex),
+    ];
+    const insertBeforeResult = validateSequenceOrder(cardsWithInsertBefore);
+    if (insertBeforeResult.valid) {
+      return { valid: true, extendInstead: true, insertIndex: jokerIndex };
+    }
+
+    return { valid: false, error: "Card cannot replace joker or extend the sequence" };
   } else {
     return validateGroup(newCards);
   }

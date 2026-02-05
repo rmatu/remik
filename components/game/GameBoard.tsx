@@ -359,6 +359,8 @@ export function GameBoard({ gameId, playerId }: GameBoardProps) {
             pendingMeldPoints={currentPlayer.pendingMeldPoints}
             hasPendingCleanSequence={currentPlayer.hasPendingCleanSequence}
             initialMeldThreshold={gameState.initialMeldPoints}
+            mustDiscardExcess={gameState.mustDiscardExcess}
+            excessCards={gameState.excessCards}
           />
         )}
 
