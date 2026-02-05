@@ -7,8 +7,9 @@ import {
   calculateCardPoints,
   shouldSolidifyMelds,
   solidifyPlayerMelds,
+  getRankIndex,
 } from "./helpers/meldValidation";
-import { Card } from "../lib/types";
+import { Card, Rank } from "../lib/types";
 
 const cardValidator = v.object({
   id: v.string(),
@@ -73,10 +74,19 @@ export const drawFromStock = mutation({
 
       const drawnCard = reshuffled.pop()!;
       const playerIndex = game.players.findIndex((p) => p.playerId === args.playerId);
+      const player = game.players[playerIndex];
+      const newHand = [...player.hand, drawnCard];
       const updatedPlayers = [...game.players];
       updatedPlayers[playerIndex] = {
-        ...updatedPlayers[playerIndex],
-        hand: [...updatedPlayers[playerIndex].hand, drawnCard],
+        ...player,
+        hand: newHand,
+      };
+
+      // Save snapshot for undo functionality
+      const turnStartSnapshot = {
+        playerHand: newHand,
+        tableMelds: game.tableMelds,
+        hasLaidInitialMeld: player.hasLaidInitialMeld,
       };
 
       await ctx.db.patch(args.gameId, {
@@ -84,6 +94,7 @@ export const drawFromStock = mutation({
         discardPile: [topDiscard],
         players: updatedPlayers,
         turnPhase: "play",
+        turnStartSnapshot,
         lastActionAt: Date.now(),
       });
     } else {
@@ -91,16 +102,26 @@ export const drawFromStock = mutation({
       const drawnCard = newStock.pop()!;
 
       const playerIndex = game.players.findIndex((p) => p.playerId === args.playerId);
+      const player = game.players[playerIndex];
+      const newHand = [...player.hand, drawnCard];
       const updatedPlayers = [...game.players];
       updatedPlayers[playerIndex] = {
-        ...updatedPlayers[playerIndex],
-        hand: [...updatedPlayers[playerIndex].hand, drawnCard],
+        ...player,
+        hand: newHand,
+      };
+
+      // Save snapshot for undo functionality
+      const turnStartSnapshot = {
+        playerHand: newHand,
+        tableMelds: game.tableMelds,
+        hasLaidInitialMeld: player.hasLaidInitialMeld,
       };
 
       await ctx.db.patch(args.gameId, {
         stockPile: newStock,
         players: updatedPlayers,
         turnPhase: "play",
+        turnStartSnapshot,
         lastActionAt: Date.now(),
       });
     }
@@ -136,16 +157,26 @@ export const drawFromDiscard = mutation({
     const drawnCard = newDiscard.pop()!;
 
     const playerIndex = game.players.findIndex((p) => p.playerId === args.playerId);
+    const player = game.players[playerIndex];
+    const newHand = [...player.hand, drawnCard];
     const updatedPlayers = [...game.players];
     updatedPlayers[playerIndex] = {
-      ...updatedPlayers[playerIndex],
-      hand: [...updatedPlayers[playerIndex].hand, drawnCard],
+      ...player,
+      hand: newHand,
+    };
+
+    // Save snapshot for undo functionality
+    const turnStartSnapshot = {
+      playerHand: newHand,
+      tableMelds: game.tableMelds,
+      hasLaidInitialMeld: player.hasLaidInitialMeld,
     };
 
     await ctx.db.patch(args.gameId, {
       discardPile: newDiscard,
       players: updatedPlayers,
       turnPhase: "play",
+      turnStartSnapshot,
       lastActionAt: Date.now(),
     });
   },
@@ -474,18 +505,56 @@ export const addToMeld = mutation({
     // Determine where to add the card for sequences
     let newMeldCards: Card[];
     if (meld.type === "sequence") {
-      // Try both positions and use the valid one
-      const atStart = [card, ...meld.cards];
-      const atEnd = [...meld.cards, card];
-
       if (args.position === "start") {
-        newMeldCards = atStart;
+        newMeldCards = [card, ...meld.cards];
       } else if (args.position === "end") {
-        newMeldCards = atEnd;
+        newMeldCards = [...meld.cards, card];
       } else {
-        // Auto-detect
-        const startValid = validateMeld(atStart).valid;
-        newMeldCards = startValid ? atStart : atEnd;
+        // Auto-detect based on rank comparison
+        // For sequences, compare the card's rank to the first and last cards
+        const firstCard = meld.cards[0];
+        const lastCard = meld.cards[meld.cards.length - 1];
+
+        if (card.isJoker) {
+          // For jokers, check which position is valid
+          const atStart = [card, ...meld.cards];
+          const atEnd = [...meld.cards, card];
+          // Prefer end position for jokers, unless start is the only valid option
+          const endValid = validateMeld(atEnd).valid;
+          newMeldCards = endValid ? atEnd : atStart;
+        } else {
+          // For regular cards, determine position by rank
+          const cardRank = getRankIndex(card.rank as Rank);
+
+          // Find first and last non-joker cards to compare
+          const firstNonJoker = meld.cards.find((c) => !c.isJoker);
+          const lastNonJoker = [...meld.cards].reverse().find((c) => !c.isJoker);
+
+          if (firstNonJoker && lastNonJoker) {
+            const firstRank = getRankIndex(firstNonJoker.rank as Rank);
+            const lastRank = getRankIndex(lastNonJoker.rank as Rank);
+
+            // Special case: Ace can be high (after King) or low (before 2)
+            if (card.rank === "A") {
+              // If sequence ends with King, Ace goes at end (Ace-high)
+              // If sequence starts with 2, Ace goes at start (Ace-low)
+              if (lastNonJoker.rank === "K") {
+                newMeldCards = [...meld.cards, card];
+              } else {
+                newMeldCards = [card, ...meld.cards];
+              }
+            } else if (cardRank < firstRank) {
+              // Add at start if card rank is lower
+              newMeldCards = [card, ...meld.cards];
+            } else {
+              // Add at end
+              newMeldCards = [...meld.cards, card];
+            }
+          } else {
+            // Fallback: add at end
+            newMeldCards = [...meld.cards, card];
+          }
+        }
       }
     } else {
       newMeldCards = [...meld.cards, card];
@@ -680,6 +749,52 @@ export const takeBackPendingMeld = mutation({
     await ctx.db.patch(args.gameId, {
       players: updatedPlayers,
       tableMelds: updatedMelds,
+      lastActionAt: Date.now(),
+    });
+  },
+});
+
+export const resetTurn = mutation({
+  args: {
+    gameId: v.id("games"),
+    playerId: v.id("players"),
+  },
+  handler: async (ctx, args) => {
+    const game = await ctx.db.get(args.gameId);
+    if (!game) throw new Error("Game not found");
+
+    if (game.status !== "playing") {
+      throw new Error("Game is not in progress");
+    }
+
+    if (game.currentTurnPlayerId !== args.playerId) {
+      throw new Error("It's not your turn");
+    }
+
+    if (game.turnPhase !== "play") {
+      throw new Error("Can only reset during play phase");
+    }
+
+    if (!game.turnStartSnapshot) {
+      throw new Error("No snapshot available to reset to");
+    }
+
+    const playerIndex = game.players.findIndex((p) => p.playerId === args.playerId);
+    if (playerIndex === -1) {
+      throw new Error("Player not found in game");
+    }
+
+    // Restore the snapshot
+    const updatedPlayers = [...game.players];
+    updatedPlayers[playerIndex] = {
+      ...updatedPlayers[playerIndex],
+      hand: game.turnStartSnapshot.playerHand,
+      hasLaidInitialMeld: game.turnStartSnapshot.hasLaidInitialMeld,
+    };
+
+    await ctx.db.patch(args.gameId, {
+      players: updatedPlayers,
+      tableMelds: game.turnStartSnapshot.tableMelds,
       lastActionAt: Date.now(),
     });
   },

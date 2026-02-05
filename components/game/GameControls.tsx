@@ -3,7 +3,7 @@
 import { Button, Badge } from "@/components/ui";
 import { TurnPhase } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { Layers, CreditCard, X, AlertCircle, Check } from "lucide-react";
+import { Layers, CreditCard, X, AlertCircle, Check, RotateCcw } from "lucide-react";
 
 interface GameControlsProps {
   turnPhase: TurnPhase;
@@ -16,6 +16,7 @@ interface GameControlsProps {
   onMeld: () => void;
   onDiscard: () => void;
   onClearSelection: () => void;
+  onResetTurn?: () => void;
   isLoading?: boolean;
   error?: string | null;
   pendingMeldPoints?: number;
@@ -34,6 +35,7 @@ export function GameControls({
   onMeld,
   onDiscard,
   onClearSelection,
+  onResetTurn,
   isLoading = false,
   error,
   pendingMeldPoints = 0,
@@ -138,6 +140,17 @@ export function GameControls({
 
         {turnPhase === "play" && (
           <>
+            {onResetTurn && (
+              <Button
+                onClick={onResetTurn}
+                disabled={isLoading}
+                variant="outline"
+                className="h-11 px-3 border-white/20 bg-transparent text-white/70 hover:bg-white/10 hover:text-white"
+                title="Reset turn - undo all moves"
+              >
+                <RotateCcw className="h-4 w-4" />
+              </Button>
+            )}
             <Button
               onClick={onMeld}
               disabled={selectedCount < 3}

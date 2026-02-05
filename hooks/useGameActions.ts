@@ -17,6 +17,7 @@ export function useGameActions(gameId: Id<"games"> | null, playerId: Id<"players
   const addToMeldMutation = useMutation(api.actions.addToMeld);
   const replaceJokerMutation = useMutation(api.actions.replaceJoker);
   const takeBackPendingMeldMutation = useMutation(api.actions.takeBackPendingMeld);
+  const resetTurnMutation = useMutation(api.actions.resetTurn);
 
   const handleAction = useCallback(
     async <T>(action: () => Promise<T>): Promise<T | null> => {
@@ -100,6 +101,11 @@ export function useGameActions(gameId: Id<"games"> | null, playerId: Id<"players
     [gameId, playerId, handleAction, takeBackPendingMeldMutation]
   );
 
+  const resetTurn = useCallback(() => {
+    if (!gameId || !playerId) return;
+    return handleAction(() => resetTurnMutation({ gameId, playerId }));
+  }, [gameId, playerId, handleAction, resetTurnMutation]);
+
   const clearError = useCallback(() => setError(null), []);
 
   return {
@@ -111,6 +117,7 @@ export function useGameActions(gameId: Id<"games"> | null, playerId: Id<"players
     addToMeld,
     replaceJoker,
     takeBackPendingMeld,
+    resetTurn,
     error,
     clearError,
     isLoading,

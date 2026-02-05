@@ -25,6 +25,13 @@ export function getRankIndex(rank: Rank | "joker"): number {
   return RANKS.indexOf(rank);
 }
 
+// Get rank index with Ace-high option (Ace = 13 instead of 0)
+function getRankIndexAceHigh(rank: Rank | "joker", aceHigh: boolean): number {
+  if (rank === "joker") return -1;
+  if (rank === "A" && aceHigh) return 13; // Ace after King
+  return RANKS.indexOf(rank);
+}
+
 export function calculateCardPoints(card: Card): number {
   return RANK_VALUES[card.rank];
 }
@@ -108,28 +115,18 @@ export function validateSequenceOrder(cards: Card[]): ValidationResult {
   return { valid: true, points: calculateMeldPoints(cards) };
 }
 
-export function validateSequence(cards: Card[]): ValidationResult & { sortedCards?: Card[] } {
-  if (cards.length < 3) {
-    return { valid: false, error: "Sequence must have at least 3 cards" };
-  }
-
+// Helper to validate sequence with specific Ace mode
+function validateSequenceWithAceMode(
+  cards: Card[],
+  aceHigh: boolean
+): ValidationResult & { sortedCards?: Card[] } {
   const nonJokers = cards.filter((c) => !c.isJoker);
   const jokers = cards.filter((c) => c.isJoker);
   const jokerCount = jokers.length;
 
-  if (nonJokers.length === 0) {
-    return { valid: false, error: "Sequence cannot be all jokers" };
-  }
-
-  // All non-jokers must be same suit
-  const suits = new Set(nonJokers.map((c) => c.suit));
-  if (suits.size > 1) {
-    return { valid: false, error: "All cards in a sequence must be the same suit" };
-  }
-
-  // Sort non-jokers by rank
+  // Sort non-jokers by rank (with ace-high option)
   const sortedNonJokers = [...nonJokers].sort(
-    (a, b) => getRankIndex(a.rank as Rank) - getRankIndex(b.rank as Rank)
+    (a, b) => getRankIndexAceHigh(a.rank as Rank, aceHigh) - getRankIndexAceHigh(b.rank as Rank, aceHigh)
   );
 
   // Check for gaps and determine where jokers should go
@@ -141,7 +138,7 @@ export function validateSequence(cards: Card[]): ValidationResult & { sortedCard
 
     if (i > 0) {
       const prevCard = sortedNonJokers[i - 1];
-      const gap = getRankIndex(card.rank as Rank) - getRankIndex(prevCard.rank as Rank) - 1;
+      const gap = getRankIndexAceHigh(card.rank as Rank, aceHigh) - getRankIndexAceHigh(prevCard.rank as Rank, aceHigh) - 1;
 
       if (gap > 0) {
         // Need jokers to fill the gap
@@ -166,13 +163,15 @@ export function validateSequence(cards: Card[]): ValidationResult & { sortedCard
   // Add any remaining jokers at the start or end
   const remainingJokers = jokerCount - jokersUsed;
   if (remainingJokers > 0) {
-    // Check if we can add jokers at the start
-    const firstRankIdx = getRankIndex(sortedNonJokers[0].rank as Rank);
-    const lastRankIdx = getRankIndex(sortedNonJokers[sortedNonJokers.length - 1].rank as Rank);
+    const firstRankIdx = getRankIndexAceHigh(sortedNonJokers[0].rank as Rank, aceHigh);
+    const lastRankIdx = getRankIndexAceHigh(sortedNonJokers[sortedNonJokers.length - 1].rank as Rank, aceHigh);
 
-    // Determine how many can go at start vs end
-    const canAddAtStart = firstRankIdx; // Can't go below A (index 0)
-    const canAddAtEnd = 12 - lastRankIdx; // Can't go above K (index 12)
+    // Determine bounds (with ace-high, max is 13; with ace-low, max is 12)
+    const maxRankIdx = aceHigh ? 13 : 12;
+    const minRankIdx = aceHigh ? 1 : 0; // With ace-high, min is 2 (index 1); with ace-low, min is A (index 0)
+
+    const canAddAtStart = firstRankIdx - minRankIdx;
+    const canAddAtEnd = maxRankIdx - lastRankIdx;
 
     // Distribute remaining jokers (prefer end, but respect bounds and no adjacent jokers)
     let jokersAtStart = 0;
@@ -186,7 +185,7 @@ export function validateSequence(cards: Card[]): ValidationResult & { sortedCard
 
     // Check bounds
     if (jokersAtStart > canAddAtStart || jokersAtEnd > canAddAtEnd) {
-      return { valid: false, error: "Sequence goes out of bounds (A to K)" };
+      return { valid: false, error: "Sequence goes out of bounds" };
     }
 
     // Check for adjacent jokers at boundaries
@@ -206,6 +205,48 @@ export function validateSequence(cards: Card[]): ValidationResult & { sortedCard
   }
 
   return { valid: true, points: calculateMeldPoints(cards), sortedCards };
+}
+
+export function validateSequence(cards: Card[]): ValidationResult & { sortedCards?: Card[] } {
+  if (cards.length < 3) {
+    return { valid: false, error: "Sequence must have at least 3 cards" };
+  }
+
+  const nonJokers = cards.filter((c) => !c.isJoker);
+
+  if (nonJokers.length === 0) {
+    return { valid: false, error: "Sequence cannot be all jokers" };
+  }
+
+  // All non-jokers must be same suit
+  const suits = new Set(nonJokers.map((c) => c.suit));
+  if (suits.size > 1) {
+    return { valid: false, error: "All cards in a sequence must be the same suit" };
+  }
+
+  // Check if sequence contains both Ace and King (potential ace-high sequence)
+  const hasAce = nonJokers.some((c) => c.rank === "A");
+  const hasKing = nonJokers.some((c) => c.rank === "K");
+  const has2 = nonJokers.some((c) => c.rank === "2");
+
+  // Try ace-high if we have K and A but not 2 (or try both and pick valid one)
+  if (hasAce && hasKing && !has2) {
+    // This looks like an ace-high sequence (e.g., Q-K-A)
+    const aceHighResult = validateSequenceWithAceMode(cards, true);
+    if (aceHighResult.valid) return aceHighResult;
+  }
+
+  // Try ace-low (normal)
+  const aceLowResult = validateSequenceWithAceMode(cards, false);
+  if (aceLowResult.valid) return aceLowResult;
+
+  // If ace-low failed and we have an Ace, try ace-high as fallback
+  if (hasAce) {
+    const aceHighResult = validateSequenceWithAceMode(cards, true);
+    if (aceHighResult.valid) return aceHighResult;
+  }
+
+  return { valid: false, error: "Cards in sequence must be consecutive" };
 }
 
 export function validateGroup(cards: Card[]): ValidationResult {

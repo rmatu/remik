@@ -81,6 +81,15 @@ export default defineSchema({
     discardPile: v.array(cardValidator),
     tableMelds: v.array(meldValidator),
 
+    // Snapshot of state at turn start (after drawing) for undo functionality
+    turnStartSnapshot: v.optional(
+      v.object({
+        playerHand: v.array(cardValidator),
+        tableMelds: v.array(meldValidator),
+        hasLaidInitialMeld: v.boolean(),
+      })
+    ),
+
     currentRound: v.number(),
     createdAt: v.number(),
     lastActionAt: v.number(),

@@ -37,7 +37,9 @@ export function GameBoard({ gameId, playerId }: GameBoardProps) {
     layDownInitialMelds,
     layDownMeld,
     addToMeld,
+    replaceJoker,
     takeBackPendingMeld,
+    resetTurn,
     error,
     clearError,
     isLoading: isActionLoading,
@@ -157,6 +159,38 @@ export function GameBoard({ gameId, playerId }: GameBoardProps) {
     [takeBackPendingMeld]
   );
 
+  const handleReplaceJoker = useCallback(
+    async (meldId: string, jokerCardId: string) => {
+      const cardIds = getSelectedCardIds();
+      if (cardIds.length !== 1) return;
+
+      const selectedCardId = cardIds[0];
+      const selectedCard = currentPlayer?.hand.find((c) => c.id === selectedCardId);
+      if (!selectedCard || selectedCard.isJoker) return;
+
+      await replaceJoker(meldId, jokerCardId, selectedCardId);
+      clearSelection();
+    },
+    [replaceJoker, getSelectedCardIds, currentPlayer?.hand, clearSelection]
+  );
+
+  const handleAddCardToMeld = useCallback(
+    async (meldId: string) => {
+      const cardIds = getSelectedCardIds();
+      if (cardIds.length !== 1) return;
+
+      const selectedCardId = cardIds[0];
+      await addToMeld(meldId, selectedCardId);
+      clearSelection();
+    },
+    [addToMeld, getSelectedCardIds, clearSelection]
+  );
+
+  const handleResetTurn = useCallback(async () => {
+    clearSelection();
+    await resetTurn();
+  }, [resetTurn, clearSelection]);
+
   if (isLoading || !gameState || !currentPlayer) {
     return (
       <div className="min-h-screen flex items-center justify-center felt-texture">
@@ -241,16 +275,20 @@ export function GameBoard({ gameId, playerId }: GameBoardProps) {
           <MeldZone
             melds={gameState.tableMelds}
             onMeldCardClick={
-              isMyTurn && currentPlayer.hasLaidInitialMeld && gameState.turnPhase === "play"
+              isMyTurn && currentPlayer.hasLaidInitialMeld && gameState.turnPhase === "play" && selectedCount === 1
                 ? (meldId, cardId, card) => {
-                    if (card.isJoker && selectedCount === 1) {
-                      const selectedCardId = getSelectedCardIds()[0];
-                      const selectedCard = currentPlayer.hand.find(
-                        (c) => c.id === selectedCardId
-                      );
-                      if (selectedCard && !selectedCard.isJoker) {
-                        clearSelection();
-                      }
+                    const selectedCardId = getSelectedCardIds()[0];
+                    const selectedCard = currentPlayer.hand.find(
+                      (c) => c.id === selectedCardId
+                    );
+                    if (!selectedCard) return;
+
+                    // If clicking a joker with a non-joker card selected, try to replace it
+                    if (card.isJoker && !selectedCard.isJoker) {
+                      handleReplaceJoker(meldId, cardId);
+                    } else {
+                      // Otherwise, try to add the selected card to this meld
+                      handleAddCardToMeld(meldId);
                     }
                   }
                 : undefined
@@ -315,6 +353,7 @@ export function GameBoard({ gameId, playerId }: GameBoardProps) {
             onMeld={handleMeld}
             onDiscard={handleDiscard}
             onClearSelection={clearSelection}
+            onResetTurn={handleResetTurn}
             isLoading={isActionLoading}
             error={error}
             pendingMeldPoints={currentPlayer.pendingMeldPoints}
