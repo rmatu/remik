@@ -14,6 +14,9 @@ interface MeldZoneProps {
   highlightJokers?: boolean;
   players?: PlayerInfo[];
   initialMeldThreshold?: number;
+  currentPlayerId?: string;
+  isMyTurn?: boolean;
+  onTakeBackMeld?: (meldId: string) => void;
 }
 
 export function MeldZone({
@@ -22,6 +25,9 @@ export function MeldZone({
   highlightJokers = false,
   players = [],
   initialMeldThreshold = 30,
+  currentPlayerId,
+  isMyTurn = false,
+  onTakeBackMeld,
 }: MeldZoneProps) {
   if (melds.length === 0) {
     return (
@@ -71,16 +77,23 @@ export function MeldZone({
             Pending ({pendingMelds.length}) — needs {initialMeldThreshold} pts + clean sequence
           </div>
           <div className="flex flex-wrap gap-2 sm:gap-3 pt-1">
-            {pendingMelds.map((meld) => (
-              <MeldGroup
-                key={meld.id}
-                meld={meld}
-                onCardClick={onMeldCardClick}
-                highlightJokers={highlightJokers}
-                isPending={true}
-                ownerName={getPlayerName(meld.ownerId)}
-              />
-            ))}
+            {pendingMelds.map((meld) => {
+              const isMyMeld = meld.ownerId === currentPlayerId;
+              const canTakeBack = isMyTurn && isMyMeld && onTakeBackMeld;
+
+              return (
+                <MeldGroup
+                  key={meld.id}
+                  meld={meld}
+                  onCardClick={onMeldCardClick}
+                  highlightJokers={highlightJokers}
+                  isPending={true}
+                  ownerName={getPlayerName(meld.ownerId)}
+                  canTakeBack={!!canTakeBack}
+                  onTakeBack={onTakeBackMeld}
+                />
+              );
+            })}
           </div>
         </div>
       )}

@@ -164,13 +164,14 @@ export function GameControls({
           </>
         )}
 
+        {/* Legacy: discard phase for games started before the fix */}
         {turnPhase === "discard" && (
           <Button
             onClick={onDiscard}
             disabled={selectedCount !== 1 || isLoading}
             className="flex-1 h-11 bg-emerald-600 hover:bg-emerald-700 text-white font-medium disabled:opacity-40"
           >
-            Discard to Start
+            Discard
             {selectedCount === 1 && (
               <Badge className="ml-2 bg-white/20 text-white text-[10px] px-1.5">1</Badge>
             )}
@@ -188,7 +189,7 @@ export function GameControls({
               : "Select cards to meld, or select 1 card to discard"}
           </>
         )}
-        {turnPhase === "discard" && "Select one card to discard and start the round"}
+        {turnPhase === "discard" && "Select one card to discard"}
       </p>
     </div>
   );

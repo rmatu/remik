@@ -212,22 +212,30 @@ export const startGame = mutation({
       dealerIndex
     );
 
+    // Flip the top card from stock to seed the discard pile
+    const stockPile = [...remainingDeck];
+    const firstDiscard = stockPile.pop()!;
+
     // Update players with their hands
     const updatedPlayers = game.players.map((p, i) => ({
       ...p,
       hand: hands[i],
     }));
 
+    // First player is to the left of dealer (next player in order)
+    const firstPlayerIndex = (dealerIndex + 1) % game.players.length;
+    const firstPlayerId = game.players[firstPlayerIndex].playerId;
+
     await ctx.db.patch(args.gameId, {
       status: "playing",
       players: updatedPlayers,
-      stockPile: remainingDeck,
-      discardPile: [],
+      stockPile: stockPile,
+      discardPile: [firstDiscard],
       tableMelds: [],
       currentRound: 1,
       dealerPlayerId,
-      currentTurnPlayerId: dealerPlayerId,
-      turnPhase: "discard", // Dealer starts by discarding
+      currentTurnPlayerId: firstPlayerId,
+      turnPhase: "draw", // Normal turn: draw first, then can play melds
       lastActionAt: Date.now(),
     });
   },
@@ -351,6 +359,10 @@ export const startNextRound = mutation({
       newDealerIndex
     );
 
+    // Flip the top card from stock to seed the discard pile
+    const stockPile = [...remainingDeck];
+    const firstDiscard = stockPile.pop()!;
+
     // Update players with their hands, keep scores, reset initial meld flag
     const updatedPlayers = game.players.map((p, i) => ({
       ...p,
@@ -358,16 +370,20 @@ export const startNextRound = mutation({
       hasLaidInitialMeld: false,
     }));
 
+    // First player is to the left of dealer
+    const firstPlayerIndex = (newDealerIndex + 1) % game.players.length;
+    const firstPlayerId = game.players[firstPlayerIndex].playerId;
+
     await ctx.db.patch(args.gameId, {
       status: "playing",
       players: updatedPlayers,
-      stockPile: remainingDeck,
-      discardPile: [],
+      stockPile: stockPile,
+      discardPile: [firstDiscard],
       tableMelds: [],
       currentRound: game.currentRound + 1,
       dealerPlayerId: newDealerPlayerId,
-      currentTurnPlayerId: newDealerPlayerId,
-      turnPhase: "discard",
+      currentTurnPlayerId: firstPlayerId,
+      turnPhase: "draw",
       lastActionAt: Date.now(),
     });
   },

@@ -33,13 +33,21 @@ export function calculateMeldPoints(cards: Card[]): number {
   return cards.reduce((sum, card) => sum + calculateCardPoints(card), 0);
 }
 
-export function validateSequence(cards: Card[]): ValidationResult {
+/**
+ * Validates if the current DISPLAY ORDER of cards is a valid sequence representation.
+ * Unlike validateSequence which auto-sorts, this checks if the given order is correct.
+ *
+ * For example:
+ * - [6♥, 7♥, Joker] → Valid (Joker represents 8♥)
+ * - [Joker, 6♥, 7♥] → Valid (Joker represents 5♥)
+ * - [6♥, Joker, 7♥] → INVALID (no gap between 6 and 7 for joker)
+ */
+export function validateSequenceOrder(cards: Card[]): ValidationResult {
   if (cards.length < 3) {
     return { valid: false, error: "Sequence must have at least 3 cards" };
   }
 
   const nonJokers = cards.filter((c) => !c.isJoker);
-  const jokerCount = cards.length - nonJokers.length;
 
   if (nonJokers.length === 0) {
     return { valid: false, error: "Sequence cannot be all jokers" };
@@ -51,17 +59,72 @@ export function validateSequence(cards: Card[]): ValidationResult {
     return { valid: false, error: "All cards in a sequence must be the same suit" };
   }
 
-  // Check for adjacent jokers
-  let consecutiveJokers = 0;
-  for (const card of cards) {
+  // Track expected rank as we traverse in display order
+  let expectedRankIdx: number | null = null;
+  let jokerStreak = 0;
+
+  for (let i = 0; i < cards.length; i++) {
+    const card = cards[i];
+
     if (card.isJoker) {
-      consecutiveJokers++;
-      if (consecutiveJokers > 1) {
+      jokerStreak++;
+      if (jokerStreak > 1) {
         return { valid: false, error: "Cannot have two adjacent jokers in a sequence" };
       }
+      // If we know the expected rank, increment it for next card
+      if (expectedRankIdx !== null) {
+        expectedRankIdx++;
+        if (expectedRankIdx > 12) {
+          return { valid: false, error: "Sequence goes out of bounds (above K)" };
+        }
+      }
     } else {
-      consecutiveJokers = 0;
+      jokerStreak = 0;
+      const cardRankIdx = getRankIndex(card.rank as Rank);
+
+      if (expectedRankIdx === null) {
+        // First non-joker card - set expected rank
+        // Account for any leading jokers
+        const leadingJokers = i;
+        expectedRankIdx = cardRankIdx;
+
+        // Check if leading jokers would go below A
+        if (cardRankIdx - leadingJokers < 0) {
+          return { valid: false, error: "Sequence goes out of bounds (below A)" };
+        }
+      } else {
+        // Check if this card matches expected rank
+        if (cardRankIdx !== expectedRankIdx) {
+          return {
+            valid: false,
+            error: `Invalid joker position: expected ${RANKS[expectedRankIdx]}, got ${card.rank}`
+          };
+        }
+      }
+      expectedRankIdx = cardRankIdx + 1;
     }
+  }
+
+  return { valid: true, points: calculateMeldPoints(cards) };
+}
+
+export function validateSequence(cards: Card[]): ValidationResult & { sortedCards?: Card[] } {
+  if (cards.length < 3) {
+    return { valid: false, error: "Sequence must have at least 3 cards" };
+  }
+
+  const nonJokers = cards.filter((c) => !c.isJoker);
+  const jokers = cards.filter((c) => c.isJoker);
+  const jokerCount = jokers.length;
+
+  if (nonJokers.length === 0) {
+    return { valid: false, error: "Sequence cannot be all jokers" };
+  }
+
+  // All non-jokers must be same suit
+  const suits = new Set(nonJokers.map((c) => c.suit));
+  if (suits.size > 1) {
+    return { valid: false, error: "All cards in a sequence must be the same suit" };
   }
 
   // Sort non-jokers by rank
@@ -69,44 +132,80 @@ export function validateSequence(cards: Card[]): ValidationResult {
     (a, b) => getRankIndex(a.rank as Rank) - getRankIndex(b.rank as Rank)
   );
 
-  // Get the position of each non-joker in the sequence
-  const positions: { rankIndex: number; position: number }[] = [];
-  let pos = 0;
-  for (const card of cards) {
-    if (!card.isJoker) {
-      positions.push({ rankIndex: getRankIndex(card.rank as Rank), position: pos });
+  // Check for gaps and determine where jokers should go
+  const sortedCards: Card[] = [];
+  let jokersUsed = 0;
+
+  for (let i = 0; i < sortedNonJokers.length; i++) {
+    const card = sortedNonJokers[i];
+
+    if (i > 0) {
+      const prevCard = sortedNonJokers[i - 1];
+      const gap = getRankIndex(card.rank as Rank) - getRankIndex(prevCard.rank as Rank) - 1;
+
+      if (gap > 0) {
+        // Need jokers to fill the gap
+        if (jokersUsed + gap > jokerCount) {
+          return { valid: false, error: "Cards in sequence must be consecutive (not enough jokers to fill gaps)" };
+        }
+        // Check for adjacent jokers (gap > 1 means adjacent jokers would be needed)
+        if (gap > 1) {
+          return { valid: false, error: "Cannot have two adjacent jokers in a sequence" };
+        }
+        // Add joker(s) to fill the gap
+        for (let j = 0; j < gap; j++) {
+          sortedCards.push(jokers[jokersUsed]);
+          jokersUsed++;
+        }
+      }
     }
-    pos++;
+
+    sortedCards.push(card);
   }
 
-  // Check that ranks are consecutive considering positions
-  for (let i = 1; i < positions.length; i++) {
-    const gap = positions[i].rankIndex - positions[i - 1].rankIndex;
-    const posGap = positions[i].position - positions[i - 1].position;
-    if (gap !== posGap) {
-      return { valid: false, error: "Cards in sequence must be consecutive" };
+  // Add any remaining jokers at the start or end
+  const remainingJokers = jokerCount - jokersUsed;
+  if (remainingJokers > 0) {
+    // Check if we can add jokers at the start
+    const firstRankIdx = getRankIndex(sortedNonJokers[0].rank as Rank);
+    const lastRankIdx = getRankIndex(sortedNonJokers[sortedNonJokers.length - 1].rank as Rank);
+
+    // Determine how many can go at start vs end
+    const canAddAtStart = firstRankIdx; // Can't go below A (index 0)
+    const canAddAtEnd = 12 - lastRankIdx; // Can't go above K (index 12)
+
+    // Distribute remaining jokers (prefer end, but respect bounds and no adjacent jokers)
+    let jokersAtStart = 0;
+    let jokersAtEnd = remainingJokers;
+
+    // If we can't fit all at end, put some at start
+    if (jokersAtEnd > canAddAtEnd) {
+      jokersAtStart = Math.min(jokersAtEnd - canAddAtEnd, canAddAtStart);
+      jokersAtEnd = remainingJokers - jokersAtStart;
+    }
+
+    // Check bounds
+    if (jokersAtStart > canAddAtStart || jokersAtEnd > canAddAtEnd) {
+      return { valid: false, error: "Sequence goes out of bounds (A to K)" };
+    }
+
+    // Check for adjacent jokers at boundaries
+    if (jokersAtStart > 1 || jokersAtEnd > 1) {
+      return { valid: false, error: "Cannot have two adjacent jokers in a sequence" };
+    }
+
+    // Insert jokers at start
+    for (let j = 0; j < jokersAtStart; j++) {
+      sortedCards.unshift(jokers[jokersUsed + j]);
+    }
+
+    // Add jokers at end
+    for (let j = 0; j < jokersAtEnd; j++) {
+      sortedCards.push(jokers[jokersUsed + jokersAtStart + j]);
     }
   }
 
-  // Check bounds (A to K)
-  const minRank = sortedNonJokers[0];
-  const maxRank = sortedNonJokers[sortedNonJokers.length - 1];
-  const minIdx = getRankIndex(minRank.rank as Rank);
-  const maxIdx = getRankIndex(maxRank.rank as Rank);
-
-  // Find the actual start position in the sequence for the min rank card
-  const minRankPosition = positions.find((p) => p.rankIndex === minIdx)!.position;
-  const impliedStart = minIdx - minRankPosition;
-
-  // Find the actual end position
-  const maxRankPosition = positions.find((p) => p.rankIndex === maxIdx)!.position;
-  const impliedEnd = maxIdx + (cards.length - 1 - maxRankPosition);
-
-  if (impliedStart < 0 || impliedEnd > 12) {
-    return { valid: false, error: "Sequence goes out of bounds (A to K)" };
-  }
-
-  return { valid: true, points: calculateMeldPoints(cards) };
+  return { valid: true, points: calculateMeldPoints(cards), sortedCards };
 }
 
 export function validateGroup(cards: Card[]): ValidationResult {
@@ -149,7 +248,7 @@ export function validateGroup(cards: Card[]): ValidationResult {
   return { valid: true, points: calculateMeldPoints(cards) };
 }
 
-export function validateMeld(cards: Card[]): ValidationResult & { type?: "sequence" | "group" } {
+export function validateMeld(cards: Card[]): ValidationResult & { type?: "sequence" | "group"; sortedCards?: Card[] } {
   // Try as sequence first
   const sequenceResult = validateSequence(cards);
   if (sequenceResult.valid) {

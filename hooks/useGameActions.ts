@@ -16,6 +16,7 @@ export function useGameActions(gameId: Id<"games"> | null, playerId: Id<"players
   const layDownInitialMeldsMutation = useMutation(api.actions.layDownInitialMelds);
   const addToMeldMutation = useMutation(api.actions.addToMeld);
   const replaceJokerMutation = useMutation(api.actions.replaceJoker);
+  const takeBackPendingMeldMutation = useMutation(api.actions.takeBackPendingMeld);
 
   const handleAction = useCallback(
     async <T>(action: () => Promise<T>): Promise<T | null> => {
@@ -89,6 +90,16 @@ export function useGameActions(gameId: Id<"games"> | null, playerId: Id<"players
     [gameId, playerId, handleAction, replaceJokerMutation]
   );
 
+  const takeBackPendingMeld = useCallback(
+    (meldId: string) => {
+      if (!gameId || !playerId) return;
+      return handleAction(() =>
+        takeBackPendingMeldMutation({ gameId, playerId, meldId })
+      );
+    },
+    [gameId, playerId, handleAction, takeBackPendingMeldMutation]
+  );
+
   const clearError = useCallback(() => setError(null), []);
 
   return {
@@ -99,6 +110,7 @@ export function useGameActions(gameId: Id<"games"> | null, playerId: Id<"players
     layDownInitialMelds,
     addToMeld,
     replaceJoker,
+    takeBackPendingMeld,
     error,
     clearError,
     isLoading,

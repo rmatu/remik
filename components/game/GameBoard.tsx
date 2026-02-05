@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
-import { useGame, useGameActions, useCardSelection } from "@/hooks";
+import { useGame, useGameActions, useCardSelection, useHandOrder } from "@/hooks";
 import { Card } from "@/lib/types";
+import { HandSortToggle } from "./HandSortToggle";
 import { PlayerHand } from "./PlayerHand";
 import { OpponentHand } from "./OpponentHand";
 import { StockPile } from "./StockPile";
@@ -36,6 +37,7 @@ export function GameBoard({ gameId, playerId }: GameBoardProps) {
     layDownInitialMelds,
     layDownMeld,
     addToMeld,
+    takeBackPendingMeld,
     error,
     clearError,
     isLoading: isActionLoading,
@@ -48,6 +50,13 @@ export function GameBoard({ gameId, playerId }: GameBoardProps) {
     getSelectedCards,
     getSelectedCardIds,
   } = useCardSelection();
+  const {
+    sortMode,
+    toggleSortMode,
+    getOrderedCards,
+    setCardOrder,
+    initializeManualOrder,
+  } = useHandOrder(gameId);
 
   const [showMeldBuilder, setShowMeldBuilder] = useState(false);
 
@@ -68,6 +77,13 @@ export function GameBoard({ gameId, playerId }: GameBoardProps) {
       return () => clearTimeout(timer);
     }
   }, [error, clearError]);
+
+  // Initialize manual order when switching to manual mode
+  useEffect(() => {
+    if (sortMode === "manual" && currentPlayer?.hand) {
+      initializeManualOrder(currentPlayer.hand);
+    }
+  }, [sortMode, currentPlayer?.hand, initializeManualOrder]);
 
   const handleCardClick = useCallback(
     (cardId: string) => {
@@ -133,6 +149,13 @@ export function GameBoard({ gameId, playerId }: GameBoardProps) {
   const handleBackToLobby = useCallback(() => {
     router.push("/lobby");
   }, [router]);
+
+  const handleTakeBackMeld = useCallback(
+    async (meldId: string) => {
+      await takeBackPendingMeld(meldId);
+    },
+    [takeBackPendingMeld]
+  );
 
   if (isLoading || !gameState || !currentPlayer) {
     return (
@@ -238,6 +261,9 @@ export function GameBoard({ gameId, playerId }: GameBoardProps) {
               name: p.name,
             }))}
             initialMeldThreshold={gameState.initialMeldPoints}
+            currentPlayerId={playerId.toString()}
+            isMyTurn={isMyTurn && gameState.turnPhase === "play"}
+            onTakeBackMeld={handleTakeBackMeld}
           />
         </div>
 
@@ -297,13 +323,23 @@ export function GameBoard({ gameId, playerId }: GameBoardProps) {
           />
         )}
 
-        {/* Player hand - horizontal scroll on mobile */}
+        {/* Player hand with sort toggle */}
         <div className="mt-2 pb-2">
+          <div className="flex justify-end px-4 mb-1">
+            <HandSortToggle
+              sortMode={sortMode}
+              onToggle={toggleSortMode}
+              disabled={isActionLoading}
+            />
+          </div>
           <PlayerHand
             cards={currentPlayer.hand}
             selectedCardIds={selectedCardIds}
             onCardClick={handleCardClick}
             disabled={!isMyTurn || isActionLoading}
+            sortMode={sortMode}
+            orderedCards={getOrderedCards(currentPlayer.hand)}
+            onReorder={setCardOrder}
           />
         </div>
       </div>

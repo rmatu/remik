@@ -270,6 +270,9 @@ export const layDownMeld = mutation({
       throw new Error(result.error || "Invalid meld");
     }
 
+    // Use sorted cards if available (for sequences), otherwise use original order
+    const finalMeldCards = result.sortedCards || meldCards;
+
     // Remove cards from hand
     const newHand = player.hand.filter((c) => !args.cardIds.includes(c.id));
 
@@ -277,7 +280,7 @@ export const layDownMeld = mutation({
     const newMeld = {
       id: `meld-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       type: result.type!,
-      cards: meldCards,
+      cards: finalMeldCards,
       ownerId: player.hasLaidInitialMeld ? undefined : args.playerId.toString(),
       isPending: player.hasLaidInitialMeld ? undefined : true,
     };
@@ -371,10 +374,12 @@ export const layDownInitialMelds = mutation({
       if (!result.valid) {
         throw new Error(result.error || "Invalid meld");
       }
+      // Use sorted cards if available (for sequences), otherwise use original order
+      const finalMeldCards = result.sortedCards || meldCards;
       newMelds.push({
         id: `meld-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         type: result.type!,
-        cards: meldCards,
+        cards: finalMeldCards,
         ownerId: args.playerId.toString(),
         isPending: true,
       });
@@ -602,6 +607,69 @@ export const replaceJoker = mutation({
     // Update player's hand: remove replacement card, add joker
     const newHand = player.hand.filter((c) => c.id !== args.replacementCardId);
     newHand.push(joker);
+
+    const updatedPlayers = [...game.players];
+    updatedPlayers[playerIndex] = {
+      ...updatedPlayers[playerIndex],
+      hand: newHand,
+    };
+
+    await ctx.db.patch(args.gameId, {
+      players: updatedPlayers,
+      tableMelds: updatedMelds,
+      lastActionAt: Date.now(),
+    });
+  },
+});
+
+export const takeBackPendingMeld = mutation({
+  args: {
+    gameId: v.id("games"),
+    playerId: v.id("players"),
+    meldId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const game = await ctx.db.get(args.gameId);
+    if (!game) throw new Error("Game not found");
+
+    if (game.status !== "playing") {
+      throw new Error("Game is not in progress");
+    }
+
+    if (game.currentTurnPlayerId !== args.playerId) {
+      throw new Error("It's not your turn");
+    }
+
+    if (game.turnPhase !== "play") {
+      throw new Error("You can only take back melds during the play phase");
+    }
+
+    const playerIndex = game.players.findIndex((p) => p.playerId === args.playerId);
+    const player = game.players[playerIndex];
+
+    // Find the meld
+    const meldIndex = game.tableMelds.findIndex((m) => m.id === args.meldId);
+    if (meldIndex === -1) {
+      throw new Error("Meld not found");
+    }
+
+    const meld = game.tableMelds[meldIndex];
+
+    // Can only take back pending melds
+    if (!meld.isPending) {
+      throw new Error("Cannot take back solidified melds");
+    }
+
+    // Can only take back your own melds
+    if (meld.ownerId !== args.playerId.toString()) {
+      throw new Error("Cannot take back another player's meld");
+    }
+
+    // Return cards to hand
+    const newHand = [...player.hand, ...meld.cards];
+
+    // Remove meld from table
+    const updatedMelds = game.tableMelds.filter((m) => m.id !== args.meldId);
 
     const updatedPlayers = [...game.players];
     updatedPlayers[playerIndex] = {
