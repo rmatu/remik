@@ -1,0 +1,9 @@
+# https://www.robotstxt.org/robotstxt.html
+User-agent: *
+Allow: /
+
+# Disallow game pages (dynamic, not useful for search)
+Disallow: /game/
+
+# Sitemap
+Sitemap: https://remik.app/sitemap.xml
