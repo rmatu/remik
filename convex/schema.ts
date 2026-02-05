@@ -33,6 +33,8 @@ const meldValidator = v.object({
   id: v.string(),
   type: v.union(v.literal("sequence"), v.literal("group")),
   cards: v.array(cardValidator),
+  ownerId: v.optional(v.string()),
+  isPending: v.optional(v.boolean()),
 });
 
 export default defineSchema({
@@ -49,6 +51,8 @@ export default defineSchema({
     name: v.string(),
     maxPlayers: v.union(v.literal(2), v.literal(3), v.literal(4)),
     deckCount: v.union(v.literal(1), v.literal(2)),
+    jokersPerDeck: v.optional(v.union(v.literal(0), v.literal(2), v.literal(4))),
+    initialMeldPoints: v.optional(v.number()),
     targetScore: v.number(),
 
     status: v.union(

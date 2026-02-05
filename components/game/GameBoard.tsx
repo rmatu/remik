@@ -155,7 +155,7 @@ export function GameBoard({ gameId, playerId }: GameBoardProps) {
   const roundWinner = gameState.players.find((p) => p.handCount === 0);
 
   return (
-    <div className="min-h-[100dvh] flex flex-col felt-texture p-2 sm:p-4 overflow-hidden">
+    <div className="min-h-[100dvh] flex flex-col felt-texture p-2 pb-16 sm:p-4 sm:pb-16 overflow-x-hidden overflow-y-auto">
       {/* Top bar: Opponent info + Scores toggle */}
       <div className="flex items-center justify-between gap-2 mb-2">
         {/* Opponents */}
@@ -233,6 +233,11 @@ export function GameBoard({ gameId, playerId }: GameBoardProps) {
                 : undefined
             }
             highlightJokers={isMyTurn && currentPlayer.hasLaidInitialMeld}
+            players={gameState.players.map((p) => ({
+              playerId: p.playerId.toString(),
+              name: p.name,
+            }))}
+            initialMeldThreshold={gameState.initialMeldPoints}
           />
         </div>
 
@@ -248,6 +253,9 @@ export function GameBoard({ gameId, playerId }: GameBoardProps) {
             }}
             tableMelds={gameState.tableMelds}
             onAddToMeld={handleAddToMeld}
+            pendingMeldPoints={currentPlayer.pendingMeldPoints}
+            currentPlayerId={playerId.toString()}
+            initialMeldThreshold={gameState.initialMeldPoints}
           />
         )}
 
@@ -283,11 +291,14 @@ export function GameBoard({ gameId, playerId }: GameBoardProps) {
             onClearSelection={clearSelection}
             isLoading={isActionLoading}
             error={error}
+            pendingMeldPoints={currentPlayer.pendingMeldPoints}
+            hasPendingCleanSequence={currentPlayer.hasPendingCleanSequence}
+            initialMeldThreshold={gameState.initialMeldPoints}
           />
         )}
 
         {/* Player hand - horizontal scroll on mobile */}
-        <div className="mt-2 pb-1">
+        <div className="mt-2 pb-2">
           <PlayerHand
             cards={currentPlayer.hand}
             selectedCardIds={selectedCardIds}

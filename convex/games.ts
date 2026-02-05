@@ -1,11 +1,14 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { createMultipleDecks, dealCards } from "./helpers/deck";
+import { calculatePendingMeldPoints, hasPendingCleanSequence } from "./helpers/meldValidation";
 
 const GAME_CODE_LENGTH = 6;
 const GAME_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const CARDS_PER_PLAYER = 13;
 const DEFAULT_TARGET_SCORE = 300;
+const DEFAULT_INITIAL_MELD_POINTS = 51;
+const DEFAULT_JOKERS_PER_DECK = 2;
 
 function generateGameCode(): string {
   let code = "";
@@ -20,6 +23,9 @@ export const createGame = mutation({
     playerId: v.id("players"),
     name: v.string(),
     maxPlayers: v.union(v.literal(2), v.literal(3), v.literal(4)),
+    deckCount: v.optional(v.union(v.literal(1), v.literal(2))),
+    jokersPerDeck: v.optional(v.union(v.literal(0), v.literal(2), v.literal(4))),
+    initialMeldPoints: v.optional(v.number()),
     targetScore: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -43,13 +49,17 @@ export const createGame = mutation({
         .first();
     }
 
-    const deckCount = args.maxPlayers === 2 ? 1 : 2;
+    // Default deck count based on player count, but allow override
+    const defaultDeckCount = args.maxPlayers === 2 ? 1 : 2;
+    const deckCount = args.deckCount ?? defaultDeckCount;
 
     const gameId = await ctx.db.insert("games", {
       code,
       name: args.name,
       maxPlayers: args.maxPlayers,
       deckCount: deckCount as 1 | 2,
+      jokersPerDeck: args.jokersPerDeck ?? DEFAULT_JOKERS_PER_DECK,
+      initialMeldPoints: args.initialMeldPoints ?? DEFAULT_INITIAL_MELD_POINTS,
       targetScore: args.targetScore ?? DEFAULT_TARGET_SCORE,
       status: "waiting",
       players: [
@@ -188,7 +198,7 @@ export const startGame = mutation({
     }
 
     // Create and shuffle deck(s)
-    const deck = createMultipleDecks(game.deckCount, true);
+    const deck = createMultipleDecks(game.deckCount, game.jokersPerDeck);
 
     // Random dealer for first round (seat 0)
     const dealerIndex = 0;
@@ -271,6 +281,8 @@ export const getGameState = query({
       score: p.score,
       hasLaidInitialMeld: p.hasLaidInitialMeld,
       seatPosition: p.seatPosition,
+      pendingMeldPoints: calculatePendingMeldPoints(game.tableMelds, p.playerId.toString()),
+      hasPendingCleanSequence: hasPendingCleanSequence(game.tableMelds, p.playerId.toString()),
     }));
 
     return {
@@ -279,6 +291,8 @@ export const getGameState = query({
       name: game.name,
       maxPlayers: game.maxPlayers,
       deckCount: game.deckCount,
+      jokersPerDeck: game.jokersPerDeck ?? DEFAULT_JOKERS_PER_DECK,
+      initialMeldPoints: game.initialMeldPoints ?? DEFAULT_INITIAL_MELD_POINTS,
       targetScore: game.targetScore,
       status: game.status,
       players: sanitizedPlayers,
@@ -320,7 +334,7 @@ export const startNextRound = mutation({
     }
 
     // Create and shuffle deck(s)
-    const deck = createMultipleDecks(game.deckCount, true);
+    const deck = createMultipleDecks(game.deckCount, game.jokersPerDeck);
 
     // Rotate dealer
     const currentDealerIndex = game.players.findIndex(

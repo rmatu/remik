@@ -3,7 +3,7 @@
 import { Button, Badge } from "@/components/ui";
 import { TurnPhase } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { Layers, CreditCard, X, AlertCircle } from "lucide-react";
+import { Layers, CreditCard, X, AlertCircle, Check } from "lucide-react";
 
 interface GameControlsProps {
   turnPhase: TurnPhase;
@@ -18,6 +18,9 @@ interface GameControlsProps {
   onClearSelection: () => void;
   isLoading?: boolean;
   error?: string | null;
+  pendingMeldPoints?: number;
+  hasPendingCleanSequence?: boolean;
+  initialMeldThreshold?: number;
 }
 
 export function GameControls({
@@ -33,6 +36,9 @@ export function GameControls({
   onClearSelection,
   isLoading = false,
   error,
+  pendingMeldPoints = 0,
+  hasPendingCleanSequence = false,
+  initialMeldThreshold = 30,
 }: GameControlsProps) {
   if (!isMyTurn) {
     return (
@@ -67,6 +73,36 @@ export function GameControls({
           </button>
         )}
       </div>
+
+      {/* Pending meld progress indicator */}
+      {!hasLaidInitialMeld && pendingMeldPoints > 0 && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-2.5 space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-amber-300/80 font-medium">Your pending melds</span>
+            <span className="text-amber-200">
+              {pendingMeldPoints}/{initialMeldThreshold} pts
+            </span>
+          </div>
+          <div className="h-1.5 bg-black/30 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-amber-400 rounded-full transition-all duration-300"
+              style={{ width: `${Math.min((pendingMeldPoints / initialMeldThreshold) * 100, 100)}%` }}
+            />
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px]">
+            {hasPendingCleanSequence ? (
+              <span className="text-emerald-400 flex items-center gap-1">
+                <Check className="h-3 w-3" />
+                Clean sequence
+              </span>
+            ) : (
+              <span className="text-amber-300/60">
+                ○ Clean sequence required
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Error message */}
       {error && (
@@ -148,7 +184,7 @@ export function GameControls({
         {turnPhase === "play" && (
           <>
             {!hasLaidInitialMeld
-              ? "Select 3+ cards for initial meld (30+ pts & clean sequence required)"
+              ? `Lay down melds until you reach ${initialMeldThreshold}+ pts with a clean sequence`
               : "Select cards to meld, or select 1 card to discard"}
           </>
         )}

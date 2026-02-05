@@ -10,10 +10,11 @@ import { Loader2, ArrowRight } from "lucide-react";
 interface JoinGameFormProps {
   playerId: Id<"players">;
   onGameJoined: (gameId: Id<"games">) => void;
+  initialCode?: string;
 }
 
-export function JoinGameForm({ playerId, onGameJoined }: JoinGameFormProps) {
-  const [code, setCode] = useState("");
+export function JoinGameForm({ playerId, onGameJoined, initialCode = "" }: JoinGameFormProps) {
+  const [code, setCode] = useState(initialCode);
   const [isJoining, setIsJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

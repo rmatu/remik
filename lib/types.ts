@@ -14,7 +14,11 @@ export interface Meld {
   id: string;
   type: MeldType;
   cards: Card[];
+  ownerId?: string;    // Player who created this meld
+  isPending?: boolean; // True until player reaches 51 pts
 }
+
+export const INITIAL_MELD_THRESHOLD = 51;
 
 export type GameStatus = "waiting" | "playing" | "round_end" | "finished";
 export type TurnPhase = "draw" | "play" | "discard";

@@ -2,10 +2,11 @@ import { v } from "convex/values";
 import { mutation } from "./_generated/server";
 import {
   validateMeld,
-  validateInitialMeld,
   canAddToMeld,
   canReplaceJoker,
   calculateCardPoints,
+  shouldSolidifyMelds,
+  solidifyPlayerMelds,
 } from "./helpers/meldValidation";
 import { Card } from "../lib/types";
 
@@ -263,20 +264,6 @@ export const layDownMeld = mutation({
       meldCards.push(card);
     }
 
-    // If this is player's first meld, validate initial meld requirements
-    if (!player.hasLaidInitialMeld) {
-      const initialResult = validateInitialMeld([meldCards]);
-      if (!initialResult.valid) {
-        throw new Error(initialResult.error || "Invalid initial meld");
-      }
-    } else {
-      // Validate as regular meld
-      const result = validateMeld(meldCards);
-      if (!result.valid) {
-        throw new Error(result.error || "Invalid meld");
-      }
-    }
-
     // Validate the meld
     const result = validateMeld(meldCards);
     if (!result.valid) {
@@ -286,23 +273,37 @@ export const layDownMeld = mutation({
     // Remove cards from hand
     const newHand = player.hand.filter((c) => !args.cardIds.includes(c.id));
 
-    const updatedPlayers = [...game.players];
-    updatedPlayers[playerIndex] = {
-      ...updatedPlayers[playerIndex],
-      hand: newHand,
-      hasLaidInitialMeld: true,
-    };
-
-    // Add meld to table
+    // Create meld with pending status if player hasn't solidified yet
     const newMeld = {
       id: `meld-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       type: result.type!,
       cards: meldCards,
+      ownerId: player.hasLaidInitialMeld ? undefined : args.playerId.toString(),
+      isPending: player.hasLaidInitialMeld ? undefined : true,
+    };
+
+    let updatedMelds = [...game.tableMelds, newMeld];
+
+    // Check if player should solidify their melds
+    let shouldSolidify = false;
+    if (!player.hasLaidInitialMeld) {
+      const threshold = game.initialMeldPoints ?? 30;
+      shouldSolidify = shouldSolidifyMelds(updatedMelds, args.playerId.toString(), threshold);
+      if (shouldSolidify) {
+        updatedMelds = solidifyPlayerMelds(updatedMelds, args.playerId.toString());
+      }
+    }
+
+    const updatedPlayers = [...game.players];
+    updatedPlayers[playerIndex] = {
+      ...updatedPlayers[playerIndex],
+      hand: newHand,
+      hasLaidInitialMeld: player.hasLaidInitialMeld || shouldSolidify,
     };
 
     await ctx.db.patch(args.gameId, {
       players: updatedPlayers,
-      tableMelds: [...game.tableMelds, newMeld],
+      tableMelds: updatedMelds,
       lastActionAt: Date.now(),
     });
   },
@@ -337,7 +338,7 @@ export const layDownInitialMelds = mutation({
       throw new Error("You have already laid down your initial meld");
     }
 
-    // Collect all cards for initial meld validation
+    // Collect all cards for meld validation
     const allMeldCards: Card[][] = [];
     const allCardIds: string[] = [];
 
@@ -357,14 +358,14 @@ export const layDownInitialMelds = mutation({
       allMeldCards.push(meldCards);
     }
 
-    // Validate initial meld requirements
-    const initialResult = validateInitialMeld(allMeldCards);
-    if (!initialResult.valid) {
-      throw new Error(initialResult.error || "Invalid initial meld");
-    }
-
-    // Validate each meld individually and create them
-    const newMelds: Array<{ id: string; type: "sequence" | "group"; cards: Card[] }> = [];
+    // Validate each meld individually and create them as pending
+    const newMelds: Array<{
+      id: string;
+      type: "sequence" | "group";
+      cards: Card[];
+      ownerId: string;
+      isPending: boolean;
+    }> = [];
     for (const meldCards of allMeldCards) {
       const result = validateMeld(meldCards);
       if (!result.valid) {
@@ -374,22 +375,32 @@ export const layDownInitialMelds = mutation({
         id: `meld-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         type: result.type!,
         cards: meldCards,
+        ownerId: args.playerId.toString(),
+        isPending: true,
       });
     }
 
     // Remove cards from hand
     const newHand = player.hand.filter((c) => !allCardIds.includes(c.id));
 
+    // Check if these melds meet the threshold for solidification
+    let updatedMelds = [...game.tableMelds, ...newMelds];
+    const threshold = game.initialMeldPoints ?? 30;
+    const shouldSolidify = shouldSolidifyMelds(updatedMelds, args.playerId.toString(), threshold);
+    if (shouldSolidify) {
+      updatedMelds = solidifyPlayerMelds(updatedMelds, args.playerId.toString());
+    }
+
     const updatedPlayers = [...game.players];
     updatedPlayers[playerIndex] = {
       ...updatedPlayers[playerIndex],
       hand: newHand,
-      hasLaidInitialMeld: true,
+      hasLaidInitialMeld: shouldSolidify,
     };
 
     await ctx.db.patch(args.gameId, {
       players: updatedPlayers,
-      tableMelds: [...game.tableMelds, ...newMelds],
+      tableMelds: updatedMelds,
       lastActionAt: Date.now(),
     });
   },
@@ -422,10 +433,6 @@ export const addToMeld = mutation({
     const playerIndex = game.players.findIndex((p) => p.playerId === args.playerId);
     const player = game.players[playerIndex];
 
-    if (!player.hasLaidInitialMeld) {
-      throw new Error("You must lay down your initial meld first");
-    }
-
     // Find the card in player's hand
     const card = player.hand.find((c) => c.id === args.cardId);
     if (!card) {
@@ -439,6 +446,19 @@ export const addToMeld = mutation({
     }
 
     const meld = game.tableMelds[meldIndex];
+
+    // Check pending meld restrictions
+    if (meld.isPending) {
+      // Can only add to your own pending melds
+      if (meld.ownerId !== args.playerId.toString()) {
+        throw new Error("Cannot add to another player's pending meld");
+      }
+    } else {
+      // Official melds require player to have solidified
+      if (!player.hasLaidInitialMeld) {
+        throw new Error("You must reach 51 points with a clean sequence before adding to official melds");
+      }
+    }
 
     // Validate adding to meld
     const result = canAddToMeld(meld, card);
@@ -467,11 +487,21 @@ export const addToMeld = mutation({
     }
 
     // Update meld
-    const updatedMelds = [...game.tableMelds];
+    let updatedMelds = [...game.tableMelds];
     updatedMelds[meldIndex] = {
       ...meld,
       cards: newMeldCards,
     };
+
+    // Check if player should solidify their melds after adding to their own pending meld
+    let shouldSolidify = false;
+    if (!player.hasLaidInitialMeld && meld.isPending && meld.ownerId === args.playerId.toString()) {
+      const threshold = game.initialMeldPoints ?? 30;
+      shouldSolidify = shouldSolidifyMelds(updatedMelds, args.playerId.toString(), threshold);
+      if (shouldSolidify) {
+        updatedMelds = solidifyPlayerMelds(updatedMelds, args.playerId.toString());
+      }
+    }
 
     // Remove card from hand
     const newHand = player.hand.filter((c) => c.id !== args.cardId);
@@ -479,6 +509,7 @@ export const addToMeld = mutation({
     updatedPlayers[playerIndex] = {
       ...updatedPlayers[playerIndex],
       hand: newHand,
+      hasLaidInitialMeld: player.hasLaidInitialMeld || shouldSolidify,
     };
 
     await ctx.db.patch(args.gameId, {
@@ -516,10 +547,6 @@ export const replaceJoker = mutation({
     const playerIndex = game.players.findIndex((p) => p.playerId === args.playerId);
     const player = game.players[playerIndex];
 
-    if (!player.hasLaidInitialMeld) {
-      throw new Error("You must lay down your initial meld first");
-    }
-
     // Find the replacement card in player's hand
     const replacementCard = player.hand.find((c) => c.id === args.replacementCardId);
     if (!replacementCard) {
@@ -533,6 +560,19 @@ export const replaceJoker = mutation({
     }
 
     const meld = game.tableMelds[meldIndex];
+
+    // Check pending meld restrictions
+    if (meld.isPending) {
+      // Can only replace jokers in your own pending melds
+      if (meld.ownerId !== args.playerId.toString()) {
+        throw new Error("Cannot replace jokers in another player's pending meld");
+      }
+    } else {
+      // Official melds require player to have solidified
+      if (!player.hasLaidInitialMeld) {
+        throw new Error("You must reach 51 points with a clean sequence before replacing jokers in official melds");
+      }
+    }
 
     // Find the joker in the meld
     const jokerIndex = meld.cards.findIndex((c) => c.id === args.jokerCardId);

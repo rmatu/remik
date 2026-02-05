@@ -1,4 +1,4 @@
-import { Card, Meld, Rank, Suit, ValidationResult } from "../../lib/types";
+import { Card, Meld, Rank, Suit, ValidationResult, INITIAL_MELD_THRESHOLD } from "../../lib/types";
 
 const RANKS: Rank[] = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
 const SUITS: Suit[] = ["hearts", "diamonds", "clubs", "spades"];
@@ -196,11 +196,11 @@ export function validateInitialMeld(melds: Card[][]): ValidationResult {
     }
   }
 
-  // Must have at least 30 points
-  if (totalPoints < 30) {
+  // Must have at least 51 points
+  if (totalPoints < INITIAL_MELD_THRESHOLD) {
     return {
       valid: false,
-      error: `Initial meld requires at least 30 points (you have ${totalPoints})`,
+      error: `Initial meld requires at least ${INITIAL_MELD_THRESHOLD} points (you have ${totalPoints})`,
     };
   }
 
@@ -258,4 +258,48 @@ export function canReplaceJoker(meld: Meld, jokerIndex: number, card: Card): Val
   } else {
     return validateGroup(newCards);
   }
+}
+
+/**
+ * Calculate total points of a player's pending melds
+ */
+export function calculatePendingMeldPoints(melds: Meld[], playerId: string): number {
+  return melds
+    .filter((m) => m.isPending && m.ownerId === playerId)
+    .reduce((sum, m) => sum + calculateMeldPoints(m.cards), 0);
+}
+
+/**
+ * Check if a player has at least one clean sequence among their pending melds
+ */
+export function hasPendingCleanSequence(melds: Meld[], playerId: string): boolean {
+  return melds.some(
+    (m) => m.isPending && m.ownerId === playerId && m.type === "sequence" && isCleanSequence(m.cards)
+  );
+}
+
+/**
+ * Check if a player's pending melds should be solidified (threshold+ points AND clean sequence)
+ * @param threshold - The game's configured initial meld threshold (defaults to 51)
+ */
+export function shouldSolidifyMelds(
+  melds: Meld[],
+  playerId: string,
+  threshold: number = INITIAL_MELD_THRESHOLD
+): boolean {
+  const points = calculatePendingMeldPoints(melds, playerId);
+  const hasClean = hasPendingCleanSequence(melds, playerId);
+  return points >= threshold && hasClean;
+}
+
+/**
+ * Mark all of a player's pending melds as official (solidified)
+ */
+export function solidifyPlayerMelds(melds: Meld[], playerId: string): Meld[] {
+  return melds.map((m) => {
+    if (m.isPending && m.ownerId === playerId) {
+      return { ...m, isPending: false };
+    }
+    return m;
+  });
 }

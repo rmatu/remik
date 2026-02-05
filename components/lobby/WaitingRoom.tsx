@@ -6,7 +6,7 @@ import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { Button, Badge, Spinner, Card, CardContent } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import { Copy, LogOut, Play, Users, Crown, Check } from "lucide-react";
+import { Copy, LogOut, Play, Users, Crown, Check, Settings, Link, Share2 } from "lucide-react";
 import { useState } from "react";
 
 interface WaitingRoomProps {
@@ -18,6 +18,7 @@ interface WaitingRoomProps {
 
 export function WaitingRoom({ gameId, playerId, onLeave, onGameStart }: WaitingRoomProps) {
   const [copied, setCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   const game = useQuery(api.games.getGameState, { gameId, playerId });
   const startGame = useMutation(api.games.startGame);
   const leaveGame = useMutation(api.games.leaveGame);
@@ -33,6 +34,35 @@ export function WaitingRoom({ gameId, playerId, onLeave, onGameStart }: WaitingR
     await navigator.clipboard.writeText(game?.code || "");
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const getInviteLink = () => {
+    if (typeof window === "undefined") return "";
+    return `${window.location.origin}/lobby?code=${game?.code}`;
+  };
+
+  const handleCopyLink = async () => {
+    await navigator.clipboard.writeText(getInviteLink());
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2000);
+  };
+
+  const handleShare = async () => {
+    const inviteLink = getInviteLink();
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `Join my Remik game!`,
+          text: `Join my Remik game with code ${game?.code}`,
+          url: inviteLink,
+        });
+      } catch {
+        // User cancelled or share failed, fall back to copy
+        handleCopyLink();
+      }
+    } else {
+      handleCopyLink();
+    }
   };
 
   if (!game) {
@@ -98,6 +128,38 @@ export function WaitingRoom({ gameId, playerId, onLeave, onGameStart }: WaitingR
               {copied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
             </button>
           </div>
+
+          {/* Invite Link */}
+          <div className="flex items-center gap-2 mt-3">
+            <button
+              onClick={handleCopyLink}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all",
+                linkCopied
+                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                  : "bg-white/10 text-white/80 hover:bg-white/15 hover:text-white border border-white/10"
+              )}
+            >
+              {linkCopied ? (
+                <>
+                  <Check className="w-4 h-4" />
+                  Link Copied!
+                </>
+              ) : (
+                <>
+                  <Link className="w-4 h-4" />
+                  Copy Invite Link
+                </>
+              )}
+            </button>
+            <button
+              onClick={handleShare}
+              className="p-2.5 rounded-lg bg-white/10 text-white/80 hover:bg-white/15 hover:text-white border border-white/10 transition-all"
+              title="Share invite"
+            >
+              <Share2 className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Players list */}
@@ -154,12 +216,38 @@ export function WaitingRoom({ gameId, playerId, onLeave, onGameStart }: WaitingR
           </div>
         </div>
 
+        {/* Game Settings */}
+        <div className="space-y-3">
+          <span className="flex items-center gap-2 text-emerald-200/80 text-sm font-medium">
+            <Settings className="h-4 w-4" />
+            Game Settings
+          </span>
+          <div className="bg-black/20 rounded-xl p-4 grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <span className="text-emerald-200/60">Decks</span>
+              <p className="text-white font-medium">{game.deckCount}</p>
+            </div>
+            <div>
+              <span className="text-emerald-200/60">Jokers</span>
+              <p className="text-white font-medium">{game.jokersPerDeck * game.deckCount} total</p>
+            </div>
+            <div>
+              <span className="text-emerald-200/60">Initial Meld</span>
+              <p className="text-white font-medium">{game.initialMeldPoints}+ points</p>
+            </div>
+            <div>
+              <span className="text-emerald-200/60">Target Score</span>
+              <p className="text-white font-medium">{game.targetScore}</p>
+            </div>
+          </div>
+        </div>
+
         {/* Actions */}
         <div className="flex gap-3">
           <Button
             variant="outline"
             onClick={handleLeave}
-            className="flex-1 h-11 border-white/20 text-white hover:bg-white/10"
+            className="flex-1 h-11 border-white/30 bg-white/5 text-white hover:bg-white/10"
           >
             <LogOut className="h-4 w-4 mr-2" />
             Leave
@@ -168,7 +256,12 @@ export function WaitingRoom({ gameId, playerId, onLeave, onGameStart }: WaitingR
             <Button
               onClick={handleStart}
               disabled={!canStart}
-              className="flex-1 h-11 bg-amber-500 hover:bg-amber-600 text-amber-950 font-semibold disabled:opacity-50"
+              className={cn(
+                "flex-1 h-11 font-semibold",
+                canStart
+                  ? "bg-amber-500 hover:bg-amber-600 text-amber-950"
+                  : "bg-emerald-800/50 text-emerald-200/60 border border-emerald-600/30 cursor-not-allowed"
+              )}
             >
               <Play className="h-4 w-4 mr-2" />
               {canStart ? "Start Game" : `Need ${2 - game.players.length} more`}

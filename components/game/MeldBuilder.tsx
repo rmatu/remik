@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { Card, Meld } from "@/lib/types";
 import { PlayingCard } from "./PlayingCard";
 import { Button, Card as CardUI, CardContent } from "@/components/ui";
-import { validateMeld, validateInitialMeld, calculateMeldPoints, getRankIndex } from "@/convex/helpers/meldValidation";
+import { validateMeld, calculateMeldPoints, getRankIndex, isCleanSequence } from "@/convex/helpers/meldValidation";
 import { cn } from "@/lib/utils";
 import { X, Plus, Check, AlertCircle } from "lucide-react";
 import { Rank } from "@/lib/types";
@@ -26,6 +26,9 @@ interface MeldBuilderProps {
   onCancel: () => void;
   tableMelds: Meld[];
   onAddToMeld?: (meldId: string, cardId: string) => void;
+  pendingMeldPoints?: number;
+  currentPlayerId?: string;
+  initialMeldThreshold?: number;
 }
 
 export function MeldBuilder({
@@ -35,6 +38,9 @@ export function MeldBuilder({
   onCancel,
   tableMelds,
   onAddToMeld,
+  pendingMeldPoints = 0,
+  currentPlayerId,
+  initialMeldThreshold = 30,
 }: MeldBuilderProps) {
   const [melds, setMelds] = useState<Card[][]>([sortCardsByRank(selectedCards)]);
   const [activeTab, setActiveTab] = useState<"create" | "add">("create");
@@ -42,31 +48,46 @@ export function MeldBuilder({
   // Validation for current melds
   const validation = useMemo(() => {
     if (melds.length === 0 || melds.every((m) => m.length === 0)) {
-      return { valid: false, error: "Select cards to create a meld" };
+      return { valid: false, error: "Select cards to create a meld", points: 0, hasCleanSequence: false };
     }
 
     // Filter out empty melds
     const nonEmptyMelds = melds.filter((m) => m.length > 0);
 
-    if (!hasLaidInitialMeld) {
-      return validateInitialMeld(nonEmptyMelds);
-    }
-
     // Validate each meld
+    let hasCleanSequence = false;
     for (const meldCards of nonEmptyMelds) {
       const result = validateMeld(meldCards);
       if (!result.valid) {
-        return result;
+        return { ...result, points: 0, hasCleanSequence: false };
+      }
+      if (result.type === "sequence" && isCleanSequence(meldCards)) {
+        hasCleanSequence = true;
       }
     }
 
-    const totalPoints = nonEmptyMelds.reduce(
+    const newPoints = nonEmptyMelds.reduce(
       (sum, cards) => sum + calculateMeldPoints(cards),
       0
     );
 
-    return { valid: true, points: totalPoints };
-  }, [melds, hasLaidInitialMeld]);
+    return { valid: true, points: newPoints, hasCleanSequence };
+  }, [melds]);
+
+  // Calculate combined points for display
+  const combinedPoints = pendingMeldPoints + (validation.points || 0);
+  const wouldSolidify = combinedPoints >= initialMeldThreshold && (validation.hasCleanSequence || hasPendingCleanSequenceFromTable());
+
+  function hasPendingCleanSequenceFromTable(): boolean {
+    if (!currentPlayerId) return false;
+    return tableMelds.some(
+      (m) =>
+        m.isPending &&
+        m.ownerId === currentPlayerId &&
+        m.type === "sequence" &&
+        isCleanSequence(m.cards)
+    );
+  }
 
   const handleLayDown = () => {
     const nonEmptyMelds = melds.filter((m) => m.length > 0);
@@ -127,7 +148,7 @@ export function MeldBuilder({
             <p className="text-emerald-100/80 text-sm mb-4">
               {hasLaidInitialMeld
                 ? "Create a new meld with your selected cards"
-                : "First meld: 30+ points with at least one clean sequence"}
+                : `Lay down melds until you reach ${initialMeldThreshold}+ pts with a clean sequence`}
             </p>
 
             {/* Meld groups */}
@@ -181,14 +202,25 @@ export function MeldBuilder({
               className={cn(
                 "flex items-center gap-2 text-sm mb-4 rounded-lg px-3 py-2",
                 validation.valid
-                  ? "bg-emerald-500/20 text-emerald-300"
+                  ? wouldSolidify
+                    ? "bg-emerald-500/20 text-emerald-300"
+                    : "bg-amber-500/20 text-amber-300"
                   : "bg-red-500/20 text-red-300"
               )}
             >
               {validation.valid ? (
                 <>
                   <Check className="h-4 w-4" />
-                  <span>Valid! Total: {validation.points} points</span>
+                  {hasLaidInitialMeld ? (
+                    <span>Valid! {validation.points} points</span>
+                  ) : (
+                    <span>
+                      {pendingMeldPoints > 0
+                        ? `${pendingMeldPoints} + ${validation.points} = ${combinedPoints}/${initialMeldThreshold} pts`
+                        : `${validation.points}/${initialMeldThreshold} pts`}
+                      {wouldSolidify && " — Will solidify!"}
+                    </span>
+                  )}
                 </>
               ) : (
                 <>
@@ -210,7 +242,7 @@ export function MeldBuilder({
                 Cancel
               </Button>
 
-              {!hasLaidInitialMeld && melds.length < 4 && (
+              {melds.length < 4 && (
                 <Button
                   variant="outline"
                   size="sm"

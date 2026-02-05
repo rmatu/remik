@@ -3,7 +3,7 @@ import { Card, Suit, Rank } from "../../lib/types";
 const SUITS: Suit[] = ["hearts", "diamonds", "clubs", "spades"];
 const RANKS: Rank[] = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
 
-export function createDeck(includeJokers = true): Card[] {
+export function createDeck(jokerCount: number = 2): Card[] {
   const cards: Card[] = [];
   let id = 0;
 
@@ -18,13 +18,7 @@ export function createDeck(includeJokers = true): Card[] {
     }
   }
 
-  if (includeJokers) {
-    cards.push({
-      id: `card-${id++}`,
-      suit: "joker",
-      rank: "joker",
-      isJoker: true,
-    });
+  for (let i = 0; i < jokerCount; i++) {
     cards.push({
       id: `card-${id++}`,
       suit: "joker",
@@ -36,10 +30,10 @@ export function createDeck(includeJokers = true): Card[] {
   return cards;
 }
 
-export function createMultipleDecks(deckCount: number, includeJokers = true): Card[] {
+export function createMultipleDecks(deckCount: number, jokersPerDeck: number = 2): Card[] {
   const allCards: Card[] = [];
   for (let d = 0; d < deckCount; d++) {
-    const deck = createDeck(includeJokers);
+    const deck = createDeck(jokersPerDeck);
     deck.forEach((card) => {
       allCards.push({
         ...card,

@@ -32,8 +32,8 @@ const sizeConfig = {
     jokerText: "text-[6px]",
   },
   md: {
-    card: "w-11 h-[62px]",
-    rank: "text-[11px] leading-none",
+    card: "w-14 h-[78px]",
+    rank: "text-[13px] leading-none",
     suit: "text-[10px] leading-none",
     centerSuit: "text-lg",
     jokerStar: "text-lg",
@@ -73,7 +73,7 @@ export const PlayingCard = memo(function PlayingCard({
       <div
         className={cn(
           config.card,
-          "rounded-md shadow-md overflow-hidden",
+          "rounded-md shadow-md",
           "bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900",
           "border border-slate-600",
           "flex items-center justify-center",
@@ -95,14 +95,13 @@ export const PlayingCard = memo(function PlayingCard({
         disabled={disabled || !onClick}
         className={cn(
           config.card,
-          "rounded-md shadow-md overflow-hidden",
+          "rounded-md shadow-md",
           "bg-gradient-to-br from-white via-gray-50 to-gray-100",
           "border border-gray-200",
           "flex flex-col items-center justify-center gap-0.5",
           "transition-all duration-150 ease-out",
           onClick && !disabled && "cursor-pointer hover:shadow-lg active:scale-95",
           !onClick && "cursor-default",
-          disabled && "opacity-50",
           isSelected && "ring-2 ring-amber-400 ring-offset-1 shadow-lg",
           className
         )}
@@ -127,14 +126,13 @@ export const PlayingCard = memo(function PlayingCard({
       disabled={disabled || !onClick}
       className={cn(
         config.card,
-        "rounded-md shadow-md overflow-hidden",
+        "rounded-md shadow-md",
         "bg-gradient-to-br from-white via-gray-50 to-gray-100",
         "border border-gray-200",
         "flex flex-col justify-between p-1",
         "transition-all duration-150 ease-out",
         onClick && !disabled && "cursor-pointer hover:shadow-lg active:scale-95",
         !onClick && "cursor-default",
-        disabled && "opacity-50",
         isSelected && "ring-2 ring-amber-400 ring-offset-1 shadow-lg",
         className
       )}

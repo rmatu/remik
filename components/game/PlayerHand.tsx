@@ -31,9 +31,9 @@ export function PlayerHand({
   const overlap = getOverlap();
 
   return (
-    <div className="w-full overflow-x-auto overflow-y-visible pb-2 scrollbar-hide">
+    <div className="w-full overflow-visible">
       <div
-        className="flex justify-center items-end py-2 min-w-min px-4"
+        className="flex justify-center items-center px-4 py-2 flex-wrap gap-1"
         style={{ touchAction: "pan-x" }}
       >
         {sortedCards.map((card, index) => (

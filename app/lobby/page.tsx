@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
@@ -13,13 +13,32 @@ import { ArrowLeft, ArrowRight, Plus, Users, Loader2 } from "lucide-react";
 type LobbyState = "name" | "choice" | "create" | "join" | "waiting";
 
 export default function LobbyPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen flex flex-col items-center justify-center felt-texture">
+          <Spinner className="text-white" size="lg" />
+          <span className="text-white/60 text-sm mt-3">Loading...</span>
+        </main>
+      }
+    >
+      <LobbyContent />
+    </Suspense>
+  );
+}
+
+function LobbyContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const sessionId = useSession();
   const [state, setState] = useState<LobbyState>("name");
   const [playerName, setPlayerName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [playerId, setPlayerId] = useState<Id<"players"> | null>(null);
   const [gameId, setGameId] = useState<Id<"games"> | null>(null);
+
+  // Get invite code from URL if present
+  const inviteCode = searchParams.get("code")?.toUpperCase() || "";
 
   const getOrCreatePlayer = useMutation(api.players.getOrCreatePlayer);
   const existingPlayer = useQuery(
@@ -45,7 +64,8 @@ export default function LobbyPage() {
         name: playerName.trim(),
       });
       setPlayerId(id);
-      setState("choice");
+      // If we have an invite code, go directly to join
+      setState(inviteCode ? "join" : "choice");
     } catch (err) {
       console.error("Failed to create player:", err);
     } finally {
@@ -94,8 +114,14 @@ export default function LobbyPage() {
                   <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 shadow-lg mb-4">
                     <span className="text-2xl font-bold text-amber-950">R</span>
                   </div>
-                  <h1 className="text-2xl font-bold text-white">Welcome to Remik</h1>
-                  <p className="text-emerald-200/60 mt-1">Enter your name to get started</p>
+                  <h1 className="text-2xl font-bold text-white">
+                    {inviteCode ? "You're Invited!" : "Welcome to Remik"}
+                  </h1>
+                  <p className="text-emerald-200/60 mt-1">
+                    {inviteCode
+                      ? "Enter your name to join the game"
+                      : "Enter your name to get started"}
+                  </p>
                 </div>
 
                 <div className="space-y-2">
@@ -124,7 +150,7 @@ export default function LobbyPage() {
                     </>
                   ) : (
                     <>
-                      Continue
+                      {inviteCode ? "Join Game" : "Continue"}
                       <ArrowRight className="h-4 w-4 ml-2" />
                     </>
                   )}
@@ -154,7 +180,7 @@ export default function LobbyPage() {
                   <Button
                     variant="outline"
                     onClick={() => setState("join")}
-                    className="w-full h-12 border-white/20 text-white hover:bg-white/10"
+                    className="w-full h-12 bg-transparent border-white/20 text-white hover:bg-white/10"
                   >
                     <Users className="h-4 w-4 mr-2" />
                     Join Existing Game
@@ -194,7 +220,7 @@ export default function LobbyPage() {
 
             <div>
               <h1 className="text-2xl font-bold text-white mb-4">Join Game</h1>
-              <JoinGameForm playerId={playerId} onGameJoined={handleGameJoined} />
+              <JoinGameForm playerId={playerId} onGameJoined={handleGameJoined} initialCode={inviteCode} />
             </div>
           </div>
         )}
