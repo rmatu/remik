@@ -3,6 +3,7 @@
 import { Card } from "@/lib/types";
 import { PlayingCard } from "./PlayingCard";
 import { sortCards } from "@/lib/cardUtils";
+import { cn } from "@/lib/utils";
 
 interface PlayerHandProps {
   cards: Card[];
@@ -31,7 +32,7 @@ export function PlayerHand({
   const overlap = getOverlap();
 
   return (
-    <div className="w-full overflow-visible">
+    <div className={cn("w-full overflow-visible transition-opacity duration-150", disabled && "opacity-50")}>
       <div
         className="flex justify-center items-center px-4 py-2 flex-wrap gap-1"
         style={{ touchAction: "pan-x" }}
