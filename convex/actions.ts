@@ -344,6 +344,11 @@ export const layDownMeld = mutation({
     // Remove cards from hand
     const newHand = player.hand.filter((c) => !args.cardIds.includes(c.id));
 
+    // Must keep at least 1 card to discard
+    if (newHand.length < 1) {
+      throw new Error("You must keep at least 1 card in hand to discard");
+    }
+
     // Create meld with pending status if player hasn't solidified yet
     const newMeld = {
       id: `meld-${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -459,6 +464,11 @@ export const layDownInitialMelds = mutation({
 
     // Remove cards from hand
     const newHand = player.hand.filter((c) => !allCardIds.includes(c.id));
+
+    // Must keep at least 1 card to discard
+    if (newHand.length < 1) {
+      throw new Error("You must keep at least 1 card in hand to discard");
+    }
 
     // Check if these melds meet the threshold for solidification
     let updatedMelds = [...game.tableMelds, ...newMelds];
@@ -620,6 +630,12 @@ export const addToMeld = mutation({
 
     // Remove card from hand
     const newHand = player.hand.filter((c) => c.id !== args.cardId);
+
+    // Must keep at least 1 card to discard
+    if (newHand.length < 1) {
+      throw new Error("You must keep at least 1 card in hand to discard");
+    }
+
     const updatedPlayers = [...game.players];
     updatedPlayers[playerIndex] = {
       ...updatedPlayers[playerIndex],
@@ -713,6 +729,10 @@ export const replaceJoker = mutation({
       ];
       // Just remove replacement card from hand, joker stays in meld
       newHand = player.hand.filter((c) => c.id !== args.replacementCardId);
+      // Must keep at least 1 card to discard
+      if (newHand.length < 1) {
+        throw new Error("You must keep at least 1 card in hand to discard");
+      }
     } else {
       // Standard replacement: swap joker with card
       const joker = meld.cards[jokerIndex];
