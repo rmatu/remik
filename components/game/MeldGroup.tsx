@@ -35,7 +35,7 @@ export function MeldGroup({
       )}
       <div
         className={cn(
-          "flex -space-x-3 sm:-space-x-4 rounded-xl p-2 shadow-inner",
+          "flex -space-x-4 sm:-space-x-4 rounded-xl p-1.5 sm:p-2 shadow-inner",
           isPending
             ? "bg-black/20 border-2 border-dashed border-amber-400/50 opacity-80"
             : "bg-black/30"

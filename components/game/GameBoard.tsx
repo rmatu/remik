@@ -212,7 +212,7 @@ export function GameBoard({ gameId, playerId }: GameBoardProps) {
   const roundWinner = gameState.players.find((p) => p.handCount === 0);
 
   return (
-    <div className="min-h-[100dvh] flex flex-col felt-texture p-2 pb-16 sm:p-4 sm:pb-16 overflow-x-hidden overflow-y-auto">
+    <div className="h-[100dvh] flex flex-col felt-texture p-2 pb-16 sm:p-4 sm:pb-16 overflow-x-hidden overflow-hidden">
       {/* Top bar: Opponent info + Scores toggle */}
       <div className="flex items-center justify-between gap-2 mb-2">
         {/* Opponents */}
@@ -271,7 +271,7 @@ export function GameBoard({ gameId, playerId }: GameBoardProps) {
         </div>
 
         {/* Table melds - scrollable on mobile */}
-        <div className="flex-1 min-h-0 overflow-auto">
+        <div className="flex-1 min-h-0 overflow-auto max-h-[28vh] sm:max-h-none">
           <MeldZone
             melds={gameState.tableMelds}
             onMeldCardClick={
