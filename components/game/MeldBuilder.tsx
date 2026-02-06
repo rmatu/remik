@@ -117,6 +117,7 @@ export function MeldBuilder({
     let orderValid = true;
     let orderError: string | undefined;
     const sortedMelds: Card[][] = [];
+    let newPoints = 0;
 
     for (const meldCards of nonEmptyMelds) {
       const result = validateMeld(meldCards);
@@ -129,6 +130,8 @@ export function MeldBuilder({
           orderValid: true
         };
       }
+
+      newPoints += result.points || 0;
 
       // For sequences, also validate the display order
       if (result.type === "sequence") {
@@ -145,11 +148,6 @@ export function MeldBuilder({
         hasCleanSequence = true;
       }
     }
-
-    const newPoints = nonEmptyMelds.reduce(
-      (sum, cards) => sum + calculateMeldPoints(cards),
-      0
-    );
 
     return { valid: true, points: newPoints, hasCleanSequence, sortedMelds, orderValid, orderError, error: undefined };
   }, [melds]);
@@ -295,7 +293,7 @@ export function MeldBuilder({
                         )}
                         {meldCards.length > 0 && (
                           <span className="text-emerald-300/80 text-xs">
-                            {calculateMeldPoints(meldCards)} pts
+                            {result?.points ?? calculateMeldPoints(meldCards)} pts
                           </span>
                         )}
                       </div>

@@ -32,12 +32,21 @@ function getRankIndexAceHigh(rank: Rank | "joker", aceHigh: boolean): number {
   return RANKS.indexOf(rank);
 }
 
-export function calculateCardPoints(card: Card): number {
+export function calculateCardPoints(card: Card, aceHigh: boolean = false): number {
+  if (card.rank === "A" && aceHigh) return 11;
   return RANK_VALUES[card.rank];
 }
 
-export function calculateMeldPoints(cards: Card[]): number {
-  return cards.reduce((sum, card) => sum + calculateCardPoints(card), 0);
+export function calculateMeldPoints(cards: Card[], meldType?: "sequence" | "group"): number {
+  let aceHigh = false;
+  if (meldType === "group") {
+    // Aces in a group are always worth 11
+    aceHigh = true;
+  } else if (meldType === "sequence") {
+    // Aces in a sequence are worth 11 only if the sequence contains K (ace-high)
+    aceHigh = cards.some(c => !c.isJoker && c.rank === "K");
+  }
+  return cards.reduce((sum, card) => sum + calculateCardPoints(card, aceHigh), 0);
 }
 
 /**
@@ -112,7 +121,7 @@ export function validateSequenceOrder(cards: Card[]): ValidationResult {
     }
   }
 
-  return { valid: true, points: calculateMeldPoints(cards) };
+  return { valid: true, points: calculateMeldPoints(cards, "sequence") };
 }
 
 // Helper to validate sequence with specific Ace mode
@@ -204,7 +213,7 @@ function validateSequenceWithAceMode(
     }
   }
 
-  return { valid: true, points: calculateMeldPoints(cards), sortedCards };
+  return { valid: true, points: calculateMeldPoints(cards, "sequence"), sortedCards };
 }
 
 export function validateSequence(cards: Card[]): ValidationResult & { sortedCards?: Card[] } {
@@ -286,7 +295,7 @@ export function validateGroup(cards: Card[]): ValidationResult {
     return { valid: false, error: "All cards in a group must be different suits" };
   }
 
-  return { valid: true, points: calculateMeldPoints(cards) };
+  return { valid: true, points: calculateMeldPoints(cards, "group") };
 }
 
 export function validateMeld(cards: Card[]): ValidationResult & { type?: "sequence" | "group"; sortedCards?: Card[] } {
@@ -442,7 +451,7 @@ export function canReplaceJoker(
 export function calculatePendingMeldPoints(melds: Meld[], playerId: string): number {
   return melds
     .filter((m) => m.isPending && m.ownerId === playerId)
-    .reduce((sum, m) => sum + calculateMeldPoints(m.cards), 0);
+    .reduce((sum, m) => sum + calculateMeldPoints(m.cards, m.type), 0);
 }
 
 /**
